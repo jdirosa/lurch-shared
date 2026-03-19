@@ -77,7 +77,7 @@ async function handleGmailSearch(
 
   const listRes = await gmail.users.messages.list({
     userId: "me",
-    q: String(input.query),
+    q: `in:inbox ${String(input.query)}`,
     maxResults,
   });
 

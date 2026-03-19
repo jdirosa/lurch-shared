@@ -37,9 +37,15 @@ function buildSystemPrompt(ctx: UserContext): string {
   return "You are Lurch, a personal assistant. You are helping the household.";
 }
 
+// Per-chat conversation history (in-memory, lost on restart)
+const chatHistory = new Map<number, Anthropic.MessageParam[]>();
+const MAX_HISTORY = 20; // keep last 20 messages per chat
+
 export async function runAgent(userMessage: string, ctx: UserContext): Promise<string> {
   const systemPrompt = buildSystemPrompt(ctx);
+  const history = chatHistory.get(ctx.chatId) ?? [];
   const messages: Anthropic.MessageParam[] = [
+    ...history,
     { role: "user", content: userMessage },
   ];
 
@@ -87,5 +93,17 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
   }
 
   const textBlock = response.content.find((block) => block.type === "text");
-  return textBlock && "text" in textBlock ? textBlock.text : "(no response)";
+  const reply = textBlock && "text" in textBlock ? textBlock.text : "(no response)";
+
+  // Save conversation turn to history
+  history.push({ role: "user", content: userMessage });
+  history.push({ role: "assistant", content: response.content });
+
+  // Trim to max history
+  while (history.length > MAX_HISTORY) {
+    history.shift();
+  }
+  chatHistory.set(ctx.chatId, history);
+
+  return reply;
 }
