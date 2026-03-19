@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config.js";
+import type { UserContext } from "./users.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -23,9 +24,15 @@ const handlers = new Map<string, ToolHandler>([
   ["echo", async (input) => String(input.message)],
 ]);
 
-const SYSTEM_PROMPT = "You are Lurch, a personal assistant.";
+function buildSystemPrompt(ctx: UserContext): string {
+  if (ctx.type === "private") {
+    return `You are Lurch, a personal assistant. You are helping ${ctx.userName}.`;
+  }
+  return "You are Lurch, a personal assistant. You are helping the household.";
+}
 
-export async function runAgent(userMessage: string): Promise<string> {
+export async function runAgent(userMessage: string, ctx: UserContext): Promise<string> {
+  const systemPrompt = buildSystemPrompt(ctx);
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: userMessage },
   ];
@@ -33,7 +40,7 @@ export async function runAgent(userMessage: string): Promise<string> {
   let response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     tools,
     messages,
   });
@@ -67,7 +74,7 @@ export async function runAgent(userMessage: string): Promise<string> {
     response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools,
       messages,
     });
