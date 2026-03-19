@@ -1,0 +1,21 @@
+{
+  "name": "lurch-shared",
+  "version": "0.1.0",
+  "description": "Personal AI assistant — Telegram bot powered by Anthropic SDK",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/telegram.js",
+    "dev": "npx tsc --watch"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.0",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/node-telegram-bot-api": "^0.64.0",
+    "typescript": "^5.7.0"
+  }
+}
