@@ -1,0 +1,46 @@
+#!/bin/bash
+# Pre-commit hook: scan staged files for personal info leaks
+# Patterns to catch: email addresses, OAuth tokens, personal names/IDs
+
+BLOCKED=0
+HOOK_DIR="$(dirname "$0")"
+PATTERNS_FILE="$HOOK_DIR/personal-patterns.txt"
+
+# Get staged file content (only additions)
+STAGED=$(git diff --cached --diff-filter=ACM -U0)
+
+# Real email addresses (skip example.com)
+if echo "$STAGED" | grep -iE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | grep -v 'example\.com' | grep -v '^\-' | grep -qv 'noreply'; then
+  echo "BLOCKED: Staged files contain what looks like a real email address:"
+  echo "$STAGED" | grep -inE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | grep -v 'example\.com' | grep -v '^\-' | grep -v 'noreply'
+  BLOCKED=1
+fi
+
+# OAuth/API tokens (long base64-ish strings)
+if echo "$STAGED" | grep -E '(ya29\.|1//|AIza|sk-[a-zA-Z0-9]{20,})' | grep -qv '^\-'; then
+  echo "BLOCKED: Staged files contain what looks like an API/OAuth token:"
+  echo "$STAGED" | grep -nE '(ya29\.|1//|AIza|sk-[a-zA-Z0-9]{20,})' | grep -v '^\-'
+  BLOCKED=1
+fi
+
+# Personal patterns from config file (names, IDs, etc)
+if [ -f "$PATTERNS_FILE" ]; then
+  PATTERN=$(grep -v '^$' "$PATTERNS_FILE" | paste -sd '|' -)
+  if [ -n "$PATTERN" ]; then
+    STAGED_CODE=$(git diff --cached --diff-filter=ACM -U0 -- '*.ts' '*.json' '*.js' ':!users.json')
+    if echo "$STAGED_CODE" | grep -iE "$PATTERN" | grep -qv '^\-'; then
+      echo "BLOCKED: Staged code files contain personal info:"
+      echo "$STAGED_CODE" | grep -inE "$PATTERN" | grep -v '^\-'
+      BLOCKED=1
+    fi
+  fi
+fi
+
+if [ $BLOCKED -eq 1 ]; then
+  echo ""
+  echo "Commit blocked. Review the above and remove personal info before committing."
+  echo "Use 'git commit --no-verify' to bypass (only if you're sure it's safe)."
+  exit 1
+fi
+
+exit 0
