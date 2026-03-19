@@ -11,10 +11,18 @@ bot.on("message", async (msg) => {
   const ctx = resolveContext(msg.from.id, msg.chat.id, msg.from.first_name);
   if (!ctx) return;
 
+  // Show typing indicator (repeats every 4s since it expires after 5s)
+  await bot.sendChatAction(msg.chat.id, "typing");
+  const typingInterval = setInterval(() => {
+    bot.sendChatAction(msg.chat.id, "typing").catch(() => {});
+  }, 4000);
+
   try {
     const reply = await runAgent(msg.text, ctx);
+    clearInterval(typingInterval);
     await bot.sendMessage(msg.chat.id, reply);
   } catch (err) {
+    clearInterval(typingInterval);
     console.error("Agent error:", err);
     await bot.sendMessage(msg.chat.id, "Something went wrong. Try again.");
   }
