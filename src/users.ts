@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -33,7 +33,7 @@ export type UserContext = PrivateContext | SharedContext;
 
 // --- Registry shape (matches users.json) ---
 
-interface GoogleTokens {
+export interface GoogleTokens {
   refresh_token: string;
   access_token: string;
   expiry: string;
@@ -96,6 +96,77 @@ function loadRegistry(): UserRegistry {
 }
 
 const registry = loadRegistry();
+
+// --- Token lookup and update ---
+
+export function getTokensForAccount(email: string): GoogleTokens | null {
+  if (!email) return null;
+
+  // Check user entries
+  for (const entry of Object.values(registry.users)) {
+    if (entry.google_account === email) {
+      if (!entry.google_tokens.refresh_token) return null;
+      return entry.google_tokens;
+    }
+  }
+
+  // Check shared entry
+  if (registry.shared.google_account === email) {
+    if (!registry.shared.google_tokens.refresh_token) return null;
+    return registry.shared.google_tokens;
+  }
+
+  return null;
+}
+
+export function updateTokens(email: string, tokens: GoogleTokens): void {
+  // Update user entries
+  for (const entry of Object.values(registry.users)) {
+    if (entry.google_account === email) {
+      entry.google_tokens = tokens;
+      writeRegistry();
+      return;
+    }
+  }
+
+  // Update shared entry
+  if (registry.shared.google_account === email) {
+    registry.shared.google_tokens = tokens;
+    writeRegistry();
+    return;
+  }
+
+  throw new Error(`No account found for ${email}`);
+}
+
+function writeRegistry(): void {
+  const registryPath = resolve(__dirname, "../users.json");
+  writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
+}
+
+export function getRegistryUsers(): Array<{ telegramId: string; name: string; email: string }> {
+  return Object.entries(registry.users).map(([id, entry]) => ({
+    telegramId: id,
+    name: entry.name,
+    email: entry.google_account,
+  }));
+}
+
+export function getSharedEmail(): string {
+  return registry.shared.google_account;
+}
+
+export function updateTokensByTelegramId(telegramId: string, tokens: GoogleTokens): void {
+  const entry = registry.users[telegramId];
+  if (!entry) throw new Error(`No user found with Telegram ID ${telegramId}`);
+  entry.google_tokens = tokens;
+  writeRegistry();
+}
+
+export function updateSharedTokens(tokens: GoogleTokens): void {
+  registry.shared.google_tokens = tokens;
+  writeRegistry();
+}
 
 // --- Context resolution ---
 
