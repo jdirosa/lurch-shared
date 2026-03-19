@@ -6,7 +6,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function optionalEnv(name: string): string | undefined {
+  return process.env[name] || undefined;
+}
+
 export const config = {
   anthropicApiKey: requireEnv("ANTHROPIC_API_KEY"),
   telegramBotToken: requireEnv("TELEGRAM_BOT_TOKEN"),
+  googleClientId: optionalEnv("GOOGLE_CLIENT_ID"),
+  googleClientSecret: optionalEnv("GOOGLE_CLIENT_SECRET"),
 };
