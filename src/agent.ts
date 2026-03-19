@@ -1,10 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config.js";
 import type { UserContext } from "./users.js";
+import { gmailTools, gmailHandlers } from "./domains/gmail/tools.js";
+import { calendarTools, calendarHandlers } from "./domains/calendar/tools.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
-export type ToolHandler = (input: Record<string, unknown>) => Promise<string>;
+export type ToolHandler = (input: Record<string, unknown>, ctx: UserContext) => Promise<string>;
 
 const tools: Anthropic.Tool[] = [
   {
@@ -18,10 +20,14 @@ const tools: Anthropic.Tool[] = [
       required: ["message"],
     },
   },
+  ...gmailTools,
+  ...calendarTools,
 ];
 
 const handlers = new Map<string, ToolHandler>([
   ["echo", async (input) => String(input.message)],
+  ...gmailHandlers,
+  ...calendarHandlers,
 ]);
 
 function buildSystemPrompt(ctx: UserContext): string {
@@ -47,7 +53,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
   while (response.stop_reason === "tool_use") {
     const toolUseBlocks = response.content.filter(
-      (block): block is Anthropic.ContentBlockParam & { type: "tool_use" } =>
+      (block): block is Anthropic.ToolUseBlock =>
         block.type === "tool_use"
     );
 
@@ -57,7 +63,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
         let content: string;
         if (handler) {
           try {
-            content = await handler(block.input as Record<string, unknown>);
+            content = await handler(block.input as Record<string, unknown>, ctx);
           } catch (err) {
             content = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }

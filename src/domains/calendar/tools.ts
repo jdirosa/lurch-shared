@@ -1,8 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { getCalendarClient } from "../google-client.js";
 import type { UserContext } from "../../users.js";
-
-type ToolHandler = (input: Record<string, unknown>, ctx: UserContext) => Promise<string>;
+import type { ToolHandler } from "../../agent.js";
 
 export const calendarTools: Anthropic.Tool[] = [
   {
