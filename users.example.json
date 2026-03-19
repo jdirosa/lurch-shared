@@ -1,0 +1,37 @@
+{
+  "users": {
+    "123456": {
+      "name": "James",
+      "google_account": "james@example.com",
+      "google_tokens": {
+        "refresh_token": "",
+        "access_token": "",
+        "expiry": ""
+      },
+      "calendar_id": "",
+      "dropbox_root": "/james"
+    },
+    "789012": {
+      "name": "Spouse",
+      "google_account": "spouse@example.com",
+      "google_tokens": {
+        "refresh_token": "",
+        "access_token": "",
+        "expiry": ""
+      },
+      "calendar_id": "",
+      "dropbox_root": "/spouse"
+    }
+  },
+  "shared": {
+    "google_account": "family@example.com",
+    "google_tokens": {
+      "refresh_token": "",
+      "access_token": "",
+      "expiry": ""
+    },
+    "calendar_id": "",
+    "dropbox_root": "/family"
+  },
+  "group_chat_id": -100987654
+}
