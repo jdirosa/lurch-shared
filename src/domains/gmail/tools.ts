@@ -8,8 +8,11 @@ export const gmailTools: Anthropic.Tool[] = [
     name: "gmail_search",
     description:
       "Search the user's Gmail for emails matching a query. " +
-      "Uses Gmail search syntax: 'from:sarah', 'subject:deploy', 'after:2024/01/01', 'is:unread'. " +
-      "Combine terms: 'from:sarah subject:deploy'. " +
+      "Uses Gmail search syntax: 'from:jane', 'subject:deploy', 'after:2024/01/01', 'is:unread'. " +
+      "Combine terms: 'from:jane subject:deploy'. " +
+      "Set scope to 'inbox' for recent/active messages (default), or 'all' to search " +
+      "everywhere including archived mail — use 'all' for things like tax documents, " +
+      "receipts, old confirmations, or anything the user might have archived. " +
       "Returns a list of matching emails with id, subject, sender, date, and snippet (max 10). " +
       "Use gmail_read with a specific email id to get the full body.",
     input_schema: {
@@ -23,6 +26,12 @@ export const gmailTools: Anthropic.Tool[] = [
         max_results: {
           type: "number",
           description: "Maximum number of results to return (1-10, default 10)",
+        },
+        scope: {
+          type: "string",
+          enum: ["inbox", "all"],
+          description:
+            "Where to search: 'inbox' for active messages (default), 'all' for everywhere including archived mail",
         },
       },
       required: ["query"],
@@ -49,8 +58,10 @@ export const gmailTools: Anthropic.Tool[] = [
     name: "gmail_send",
     description:
       "Send an email on behalf of the user. " +
-      "IMPORTANT: Before calling this tool, ALWAYS present the full draft (to, subject, body) " +
-      "to the user and ask for explicit confirmation. Only call this tool after the user approves.",
+      "CRITICAL: You MUST NOT call this tool until the user has explicitly approved. " +
+      "First, present the complete draft to the user in this format:\n" +
+      "To: [recipient]\nSubject: [subject]\nBody: [body]\n" +
+      "Then ask: 'Should I send this?' — only call this tool after the user says yes.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -77,7 +88,7 @@ async function handleGmailSearch(
 
   const listRes = await gmail.users.messages.list({
     userId: "me",
-    q: `in:inbox ${String(input.query)}`,
+    q: input.scope === "all" ? String(input.query) : `in:inbox ${String(input.query)}`,
     maxResults,
   });
 
