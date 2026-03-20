@@ -112,9 +112,9 @@ export const gmailTools: Anthropic.Tool[] = [
     name: "gmail_check_recipient",
     description:
       "Check if an email address is on the user's approved recipients list. " +
-      "You MUST call this BEFORE sending or forwarding any email. " +
+      "Call this once per recipient when composing an email — do NOT re-check after the user has already confirmed in this conversation. " +
       "If the address is not approved, ask the user to confirm the address before proceeding. " +
-      "Once confirmed, call gmail_approve_recipient to add it to the list.",
+      "Once confirmed, call gmail_approve_recipient to add it, then continue to send without checking again.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -228,35 +228,42 @@ function extractBody(payload: any): string {
   if (!payload) return "(no body)";
 
   // Check for text/plain first
-  if (payload.mimeType === "text/plain" && payload.body?.data) {
+  if (payload.mimeType === "text/plain" && payload.body?.data && payload.body.data.length > 0) {
     return Buffer.from(payload.body.data, "base64url").toString("utf-8");
   }
 
-  // Check parts
+  // Check parts — collect candidates, preferring text/plain over text/html
   if (payload.parts) {
-    // Prefer text/plain
-    const textPart = payload.parts.find(
-      (p: any) => p.mimeType === "text/plain"
-    );
-    if (textPart?.body?.data) {
-      return Buffer.from(textPart.body.data, "base64url").toString("utf-8");
-    }
+    const textParts: any[] = [];
+    const htmlParts: any[] = [];
 
-    // Fall back to text/html with tags stripped
-    const htmlPart = payload.parts.find(
-      (p: any) => p.mimeType === "text/html"
-    );
-    if (htmlPart?.body?.data) {
-      const html = Buffer.from(htmlPart.body.data, "base64url").toString(
-        "utf-8"
-      );
-      return html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-    }
-
-    // Recurse into nested multipart
     for (const part of payload.parts) {
-      const result = extractBody(part);
-      if (result !== "(no body)") return result;
+      if (part.mimeType === "text/plain") textParts.push(part);
+      else if (part.mimeType === "text/html") htmlParts.push(part);
+    }
+
+    // Try text/plain
+    for (const part of textParts) {
+      if (part.body?.data && part.body.data.length > 0) {
+        return Buffer.from(part.body.data, "base64url").toString("utf-8");
+      }
+    }
+
+    // Try text/html
+    for (const part of htmlParts) {
+      if (part.body?.data && part.body.data.length > 0) {
+        const html = Buffer.from(part.body.data, "base64url").toString("utf-8");
+        const text = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+        if (text) return text;
+      }
+    }
+
+    // Recurse into nested multipart (including message/rfc822 forwarded messages)
+    for (const part of payload.parts) {
+      if (part.parts) {
+        const result = extractBody(part);
+        if (result !== "(no body)") return result;
+      }
     }
   }
 
@@ -303,7 +310,7 @@ async function handleGmailForward(
   const gmail = getGmailClient(account);
   const messageId = String(input.message_id);
   const to = sanitizeHeader(String(input.to));
-  const note = input.note ? sanitizeHeader(String(input.note)) : undefined;
+  const note = input.note ? String(input.note) : undefined;
 
   // Get the original message in raw format
   const original = await gmail.users.messages.get({

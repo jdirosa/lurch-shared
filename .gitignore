@@ -5,6 +5,7 @@ dist/
 users.json
 lists.json
 history.json
+data/
 personality.txt
 sessions/
 BACKLOG.md
