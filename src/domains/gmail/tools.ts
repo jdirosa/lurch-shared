@@ -9,11 +9,6 @@ function sanitizeHeader(value: string): string {
   return value.replace(/[\r\n]/g, "");
 }
 
-// Sanitize attachment filenames for safe MIME interpolation
-function sanitizeFilename(name: string): string {
-  return name.replace(/[\r\n"]/g, "_");
-}
-
 export const gmailTools: Anthropic.Tool[] = [
   {
     name: "gmail_search",
@@ -224,17 +219,28 @@ async function handleGmailRead(
   ].join("\n");
 }
 
-function logMimeStructure(payload: any, depth = 0): void {
-  if (!payload) return;
-  const indent = "  ".repeat(depth);
-  const hasData = payload.body?.data ? `data=${payload.body.data.length}chars` : "no data";
-  const attId = payload.body?.attachmentId ? ` attachmentId=${payload.body.attachmentId}` : "";
-  console.log(`${indent}${payload.mimeType} (${hasData}${attId})`);
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      logMimeStructure(part, depth + 1);
-    }
-  }
+function htmlToText(html: string): string {
+  return html
+    // Remove style/script blocks entirely
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    // Line breaks for block elements
+    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    // Strip remaining tags
+    .replace(/<[^>]+>/g, "")
+    // Decode common HTML entities
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    // Collapse runs of whitespace on the same line (preserve newlines)
+    .replace(/[^\S\n]+/g, " ")
+    // Collapse 3+ newlines into 2
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function extractBody(payload: any): string {
@@ -332,143 +338,79 @@ async function handleGmailForward(
   const to = sanitizeHeader(String(input.to));
   const note = input.note ? String(input.note) : undefined;
 
-  // Get the original message in raw format
+  // Get the original message in raw RFC 2822 format — preserves HTML, attachments, everything
   const original = await gmail.users.messages.get({
     userId: "me",
     id: messageId,
-    format: "full",
+    format: "raw",
   });
 
-  const headers = original.data.payload?.headers ?? [];
+  const rawBase64 = original.data.raw;
+  if (!rawBase64) return "Error: Could not retrieve the original email.";
+
+  // Also get headers for subject/metadata (raw format doesn't parse them)
+  const metadata = await gmail.users.messages.get({
+    userId: "me",
+    id: messageId,
+    format: "metadata",
+    metadataHeaders: ["Subject", "From", "Date", "To"],
+  });
+
+  const headers = metadata.data.payload?.headers ?? [];
   const getHeader = (name: string) =>
     headers.find((h) => h.name === name)?.value ?? "";
 
+  const origSubject = getHeader("Subject");
   const origFrom = getHeader("From");
   const origDate = getHeader("Date");
-  const origSubject = getHeader("Subject");
   const origTo = getHeader("To");
 
-  // Build the forwarded subject
   const fwdSubject = sanitizeHeader(
     origSubject.startsWith("Fwd:") ? origSubject : `Fwd: ${origSubject}`
   );
 
-  // Extract body and attachments from the original message
-  console.log("[forward] MIME structure:");
-  logMimeStructure(original.data.payload);
-  const body = extractBody(original.data.payload);
-  console.log(`[forward] extractBody result: "${body.substring(0, 200)}"`);
-  const attachments = await extractAttachments(gmail, messageId, original.data.payload);
-
-  // Build forwarded body
-  const forwardHeader = [
+  // Wrap the original raw message as a message/rfc822 attachment
+  const boundary = `boundary_${Date.now()}`;
+  const noteText = note ? `${note}\n\n` : "";
+  const preamble = [
+    noteText,
     "---------- Forwarded message ---------",
     `From: ${origFrom}`,
     `Date: ${origDate}`,
     `Subject: ${origSubject}`,
     `To: ${origTo}`,
-    "",
   ].join("\n");
 
-  const fullBody = [
-    note ? `${note}\n\n` : "",
-    "👻 Forwarded by Lurch\n\n",
-    forwardHeader,
-    body,
-  ].join("");
+  // Convert raw from base64url to standard base64
+  const rawStdBase64 = rawBase64.replace(/-/g, "+").replace(/_/g, "/");
 
-  // Build MIME message
-  const boundary = `boundary_${Date.now()}`;
+  const mime = [
+    `To: ${to}`,
+    `Subject: ${fwdSubject}`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    preamble,
+    "",
+    `--${boundary}`,
+    "Content-Type: message/rfc822",
+    "Content-Disposition: attachment",
+    "Content-Transfer-Encoding: base64",
+    "",
+    rawStdBase64,
+    `--${boundary}--`,
+  ].join("\r\n");
 
-  if (attachments.length === 0) {
-    // Simple message, no attachments
-    const raw = [
-      `To: ${to}`,
-      `Subject: ${fwdSubject}`,
-      "Content-Type: text/plain; charset=utf-8",
-      "",
-      fullBody,
-    ].join("\r\n");
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw: Buffer.from(mime).toString("base64url") },
+  });
 
-    await gmail.users.messages.send({
-      userId: "me",
-      requestBody: { raw: Buffer.from(raw).toString("base64url") },
-    });
-  } else {
-    // Multipart message with attachments
-    const parts: string[] = [
-      `To: ${to}`,
-      `Subject: ${fwdSubject}`,
-      `Content-Type: multipart/mixed; boundary="${boundary}"`,
-      "",
-      `--${boundary}`,
-      "Content-Type: text/plain; charset=utf-8",
-      "",
-      fullBody,
-    ];
-
-    for (const att of attachments) {
-      parts.push(
-        `--${boundary}`,
-        `Content-Type: ${sanitizeHeader(att.mimeType)}; name="${sanitizeFilename(att.filename)}"`,
-        `Content-Disposition: attachment; filename="${sanitizeFilename(att.filename)}"`,
-        "Content-Transfer-Encoding: base64",
-        "",
-        att.data
-      );
-    }
-
-    parts.push(`--${boundary}--`);
-
-    await gmail.users.messages.send({
-      userId: "me",
-      requestBody: { raw: Buffer.from(parts.join("\r\n")).toString("base64url") },
-    });
-  }
-
-  return `Forwarded "${origSubject}" to ${to}${attachments.length > 0 ? ` with ${attachments.length} attachment(s)` : ""}.`;
+  return `Forwarded "${origSubject}" to ${to}.`;
 }
 
-interface Attachment {
-  filename: string;
-  mimeType: string;
-  data: string; // base64
-}
-
-async function extractAttachments(
-  gmail: ReturnType<typeof getGmailClient>,
-  messageId: string,
-  payload: any
-): Promise<Attachment[]> {
-  const attachments: Attachment[] = [];
-  if (!payload) return attachments;
-
-  async function walk(part: any) {
-    if (part.filename && part.body?.attachmentId) {
-      const att = await gmail.users.messages.attachments.get({
-        userId: "me",
-        messageId,
-        id: part.body.attachmentId,
-      });
-      if (att.data.data) {
-        attachments.push({
-          filename: part.filename,
-          mimeType: part.mimeType ?? "application/octet-stream",
-          // Gmail API returns base64url, convert to standard base64 for MIME
-          data: att.data.data.replace(/-/g, "+").replace(/_/g, "/"),
-        });
-      }
-    }
-    if (part.parts) {
-      for (const child of part.parts) {
-        await walk(child);
-      }
-    }
-  }
-
-  await walk(payload);
-  return attachments;
-}
 
 async function handleCheckRecipient(
   input: Record<string, unknown>,
