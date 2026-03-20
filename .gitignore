@@ -3,4 +3,9 @@ dist/
 .env
 *.js.map
 users.json
+lists.json
+history.json
+personality.txt
+sessions/
+BACKLOG.md
 .githooks/personal-patterns.txt

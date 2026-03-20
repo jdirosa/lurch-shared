@@ -2,6 +2,17 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { getGmailClient } from "../google-client.js";
 import type { UserContext } from "../../users.js";
 import type { ToolHandler } from "../../agent.js";
+import { loadUserStore, saveUserStore } from "../store.js";
+
+// Strip CRLF to prevent MIME header injection
+function sanitizeHeader(value: string): string {
+  return value.replace(/[\r\n]/g, "");
+}
+
+// Sanitize attachment filenames for safe MIME interpolation
+function sanitizeFilename(name: string): string {
+  return name.replace(/[\r\n"]/g, "_");
+}
 
 export const gmailTools: Anthropic.Tool[] = [
   {
@@ -10,9 +21,8 @@ export const gmailTools: Anthropic.Tool[] = [
       "Search the user's Gmail for emails matching a query. " +
       "Uses Gmail search syntax: 'from:jane', 'subject:deploy', 'after:2024/01/01', 'is:unread'. " +
       "Combine terms: 'from:jane subject:deploy'. " +
-      "Set scope to 'inbox' for recent/active messages (default), or 'all' to search " +
-      "everywhere including archived mail — use 'all' for things like tax documents, " +
-      "receipts, old confirmations, or anything the user might have archived. " +
+      "Set scope to 'all' to search everywhere including archived mail (default), or " +
+      "'inbox' only when the user asks about new or unread messages. " +
       "Returns a list of matching emails with id, subject, sender, date, and snippet (max 10). " +
       "Use gmail_read with a specific email id to get the full body.",
     input_schema: {
@@ -31,7 +41,7 @@ export const gmailTools: Anthropic.Tool[] = [
           type: "string",
           enum: ["inbox", "all"],
           description:
-            "Where to search: 'inbox' for active messages (default), 'all' for everywhere including archived mail",
+            "Where to search: 'all' searches everywhere including archived mail (default), 'inbox' only for new/unread messages",
         },
       },
       required: ["query"],
@@ -72,6 +82,66 @@ export const gmailTools: Anthropic.Tool[] = [
       required: ["to", "subject", "body"],
     },
   },
+  {
+    name: "gmail_forward",
+    description:
+      "Forward an existing email to a recipient, preserving attachments. " +
+      "CRITICAL: You MUST NOT call this tool until the user has explicitly approved. " +
+      "First, tell the user which email you're about to forward and to whom. " +
+      "Then ask: 'Should I forward this?' — only call this tool after the user says yes.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        message_id: {
+          type: "string",
+          description: "The Gmail message ID to forward (from gmail_search results)",
+        },
+        to: {
+          type: "string",
+          description: "Recipient email address",
+        },
+        note: {
+          type: "string",
+          description: "Optional note to add above the forwarded message",
+        },
+      },
+      required: ["message_id", "to"],
+    },
+  },
+  {
+    name: "gmail_check_recipient",
+    description:
+      "Check if an email address is on the user's approved recipients list. " +
+      "You MUST call this BEFORE sending or forwarding any email. " +
+      "If the address is not approved, ask the user to confirm the address before proceeding. " +
+      "Once confirmed, call gmail_approve_recipient to add it to the list.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        email: {
+          type: "string",
+          description: "The email address to check",
+        },
+      },
+      required: ["email"],
+    },
+  },
+  {
+    name: "gmail_approve_recipient",
+    description:
+      "Add an email address to the user's approved recipients list. " +
+      "Only call this AFTER the user has explicitly confirmed the address is correct.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        email: {
+          type: "string",
+          description: "The email address to approve",
+        },
+      },
+      required: ["email"],
+    },
+  },
 ];
 
 // --- Handlers ---
@@ -88,7 +158,7 @@ async function handleGmailSearch(
 
   const listRes = await gmail.users.messages.list({
     userId: "me",
-    q: input.scope === "all" ? String(input.query) : `in:inbox ${String(input.query)}`,
+    q: input.scope === "inbox" ? `in:inbox ${String(input.query)}` : String(input.query),
     maxResults,
   });
 
@@ -201,8 +271,8 @@ async function handleGmailSend(
   if (!account) return "No Google account configured for this user.";
 
   const gmail = getGmailClient(account);
-  const to = String(input.to);
-  const subject = String(input.subject);
+  const to = sanitizeHeader(String(input.to));
+  const subject = sanitizeHeader(String(input.subject));
   const body = String(input.body) + "\n\n👻 Ghostwritten by Lurch";
 
   const raw = [
@@ -223,8 +293,183 @@ async function handleGmailSend(
   return `Email sent to ${to} with subject "${subject}"`;
 }
 
+async function handleGmailForward(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const account = ctx.resources.google_accounts[0];
+  if (!account) return "No Google account configured for this user.";
+
+  const gmail = getGmailClient(account);
+  const messageId = String(input.message_id);
+  const to = sanitizeHeader(String(input.to));
+  const note = input.note ? sanitizeHeader(String(input.note)) : undefined;
+
+  // Get the original message in raw format
+  const original = await gmail.users.messages.get({
+    userId: "me",
+    id: messageId,
+    format: "full",
+  });
+
+  const headers = original.data.payload?.headers ?? [];
+  const getHeader = (name: string) =>
+    headers.find((h) => h.name === name)?.value ?? "";
+
+  const origFrom = getHeader("From");
+  const origDate = getHeader("Date");
+  const origSubject = getHeader("Subject");
+  const origTo = getHeader("To");
+
+  // Build the forwarded subject
+  const fwdSubject = sanitizeHeader(
+    origSubject.startsWith("Fwd:") ? origSubject : `Fwd: ${origSubject}`
+  );
+
+  // Extract body and attachments from the original message
+  const body = extractBody(original.data.payload);
+  const attachments = await extractAttachments(gmail, messageId, original.data.payload);
+
+  // Build forwarded body
+  const forwardHeader = [
+    "---------- Forwarded message ---------",
+    `From: ${origFrom}`,
+    `Date: ${origDate}`,
+    `Subject: ${origSubject}`,
+    `To: ${origTo}`,
+    "",
+  ].join("\n");
+
+  const fullBody = [
+    note ? `${note}\n\n` : "",
+    "👻 Forwarded by Lurch\n\n",
+    forwardHeader,
+    body,
+  ].join("");
+
+  // Build MIME message
+  const boundary = `boundary_${Date.now()}`;
+
+  if (attachments.length === 0) {
+    // Simple message, no attachments
+    const raw = [
+      `To: ${to}`,
+      `Subject: ${fwdSubject}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      fullBody,
+    ].join("\r\n");
+
+    await gmail.users.messages.send({
+      userId: "me",
+      requestBody: { raw: Buffer.from(raw).toString("base64url") },
+    });
+  } else {
+    // Multipart message with attachments
+    const parts: string[] = [
+      `To: ${to}`,
+      `Subject: ${fwdSubject}`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      fullBody,
+    ];
+
+    for (const att of attachments) {
+      parts.push(
+        `--${boundary}`,
+        `Content-Type: ${sanitizeHeader(att.mimeType)}; name="${sanitizeFilename(att.filename)}"`,
+        `Content-Disposition: attachment; filename="${sanitizeFilename(att.filename)}"`,
+        "Content-Transfer-Encoding: base64",
+        "",
+        att.data
+      );
+    }
+
+    parts.push(`--${boundary}--`);
+
+    await gmail.users.messages.send({
+      userId: "me",
+      requestBody: { raw: Buffer.from(parts.join("\r\n")).toString("base64url") },
+    });
+  }
+
+  return `Forwarded "${origSubject}" to ${to}${attachments.length > 0 ? ` with ${attachments.length} attachment(s)` : ""}.`;
+}
+
+interface Attachment {
+  filename: string;
+  mimeType: string;
+  data: string; // base64
+}
+
+async function extractAttachments(
+  gmail: ReturnType<typeof getGmailClient>,
+  messageId: string,
+  payload: any
+): Promise<Attachment[]> {
+  const attachments: Attachment[] = [];
+  if (!payload) return attachments;
+
+  async function walk(part: any) {
+    if (part.filename && part.body?.attachmentId) {
+      const att = await gmail.users.messages.attachments.get({
+        userId: "me",
+        messageId,
+        id: part.body.attachmentId,
+      });
+      if (att.data.data) {
+        attachments.push({
+          filename: part.filename,
+          mimeType: part.mimeType ?? "application/octet-stream",
+          // Gmail API returns base64url, convert to standard base64 for MIME
+          data: att.data.data.replace(/-/g, "+").replace(/_/g, "/"),
+        });
+      }
+    }
+    if (part.parts) {
+      for (const child of part.parts) {
+        await walk(child);
+      }
+    }
+  }
+
+  await walk(payload);
+  return attachments;
+}
+
+async function handleCheckRecipient(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const email = String(input.email).toLowerCase();
+  const approved = store.approved_emails.some((e) => e.toLowerCase() === email);
+  return approved
+    ? `"${email}" is an approved recipient.`
+    : `"${email}" is NOT on the approved recipients list. Ask the user to confirm this address before sending.`;
+}
+
+async function handleApproveRecipient(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const email = String(input.email).toLowerCase();
+  if (!store.approved_emails.some((e) => e.toLowerCase() === email)) {
+    store.approved_emails.push(email);
+    saveUserStore(ctx, store);
+  }
+  return `"${email}" added to approved recipients.`;
+}
+
 export const gmailHandlers = new Map<string, ToolHandler>([
   ["gmail_search", handleGmailSearch],
   ["gmail_read", handleGmailRead],
   ["gmail_send", handleGmailSend],
+  ["gmail_forward", handleGmailForward],
+  ["gmail_check_recipient", handleCheckRecipient],
+  ["gmail_approve_recipient", handleApproveRecipient],
 ]);

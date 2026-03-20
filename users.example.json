@@ -1,5 +1,5 @@
 {
-  "users": {
+  "chats": {
     "123456": {
       "name": "User One",
       "google_account": "user1@example.com",
@@ -9,29 +9,18 @@
         "expiry": ""
       },
       "calendar_id": "",
-      "dropbox_root": "/user1"
+      "dropbox_root": ""
     },
-    "789012": {
-      "name": "User Two",
-      "google_account": "user2@example.com",
+    "-100987654": {
+      "name": "Family Group",
+      "google_account": "shared@example.com",
       "google_tokens": {
         "refresh_token": "",
         "access_token": "",
         "expiry": ""
       },
       "calendar_id": "",
-      "dropbox_root": "/user2"
+      "dropbox_root": ""
     }
-  },
-  "shared": {
-    "google_account": "shared@example.com",
-    "google_tokens": {
-      "refresh_token": "",
-      "access_token": "",
-      "expiry": ""
-    },
-    "calendar_id": "",
-    "dropbox_root": "/shared"
-  },
-  "group_chat_id": -100987654
+  }
 }

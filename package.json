@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/telegram.js",
+    "start": "tsc && node dist/telegram.js",
     "dev": "npx tsc --watch",
     "auth": "tsx scripts/auth.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.80.0",
     "dotenv": "^16.4.0",
     "googleapis": "^171.4.0",
     "node-telegram-bot-api": "^0.66.0",

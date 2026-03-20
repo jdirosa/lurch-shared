@@ -15,4 +15,5 @@ export const config = {
   telegramBotToken: requireEnv("TELEGRAM_BOT_TOKEN"),
   googleClientId: optionalEnv("GOOGLE_CLIENT_ID"),
   googleClientSecret: optionalEnv("GOOGLE_CLIENT_SECRET"),
+  telegramBotUsername: requireEnv("TELEGRAM_BOT_USERNAME"),
 };

@@ -4,10 +4,8 @@ import { createInterface } from "readline";
 import { google } from "googleapis";
 import open from "open";
 import {
-  getRegistryUsers,
-  getSharedEmail,
-  updateTokensByTelegramId,
-  updateSharedTokens,
+  getRegistryChats,
+  updateTokensByChatId,
 } from "../src/users.js";
 import type { GoogleTokens } from "../src/users.js";
 
@@ -33,37 +31,31 @@ function ask(question: string): Promise<string> {
 }
 
 async function main() {
-  // Determine which account to authorize
-  const isShared = (await ask("Is this for a shared account? (y/n): ")).toLowerCase() === "y";
+  const chats = getRegistryChats();
 
-  let saveTokens: (tokens: GoogleTokens) => void;
-  let label: string;
+  console.log("\nAvailable chats:");
+  chats.forEach((c, i) => {
+    console.log(`  ${i + 1}. ${c.name} (chatId: ${c.chatId}, email: ${c.email || "not set"})`);
+  });
 
-  if (isShared) {
-    const email = getSharedEmail();
-    label = `shared account (${email || "no email set"})`;
-    saveTokens = (tokens) => updateSharedTokens(tokens);
-  } else {
-    const telegramId = await ask("Enter the Telegram user ID to authorize: ");
-    const users = getRegistryUsers();
-    const user = users.find((u) => u.telegramId === telegramId.trim());
+  const choice = await ask("\nWhich chat to authorize? (number): ");
+  const index = parseInt(choice.trim(), 10) - 1;
+  const chat = chats[index];
 
-    if (!user) {
-      console.error(`No user found with Telegram ID: ${telegramId}`);
-      process.exit(1);
-    }
+  if (!chat) {
+    console.error("Invalid selection.");
+    process.exit(1);
+  }
 
-    const confirm = await ask(`Authorize as ${user.name}? (y/n): `);
-    if (confirm.toLowerCase() !== "y") {
-      console.log("Cancelled.");
-      process.exit(0);
-    }
-
-    label = `${user.name} (${user.email || "no email set"})`;
-    saveTokens = (tokens) => updateTokensByTelegramId(telegramId.trim(), tokens);
+  const confirm = await ask(`Authorize ${chat.name}? (y/n): `);
+  if (confirm.toLowerCase() !== "y") {
+    console.log("Cancelled.");
+    process.exit(0);
   }
 
   rl.close();
+
+  const label = `${chat.name} (${chat.email || "no email set"})`;
 
   // OAuth flow
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret, REDIRECT_URI);
@@ -118,7 +110,7 @@ async function main() {
     expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : "",
   };
 
-  saveTokens(googleTokens);
+  updateTokensByChatId(chat.chatId, googleTokens);
   console.log(`\nTokens saved for ${label}.`);
 }
 

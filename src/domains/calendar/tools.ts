@@ -76,7 +76,72 @@ export const calendarTools: Anthropic.Tool[] = [
       required: ["title", "start", "end"],
     },
   },
+  {
+    name: "calendar_delete",
+    description:
+      "Delete a single event from the user's calendar. " +
+      "Use calendar_search first to find the event ID and calendar ID.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        event_id: {
+          type: "string",
+          description: "The calendar event ID (from calendar_search results)",
+        },
+        calendar_id: {
+          type: "string",
+          description: "The calendar ID the event belongs to (from calendar_search results)",
+        },
+      },
+      required: ["event_id", "calendar_id"],
+    },
+  },
 ];
+
+// --- Helpers ---
+
+async function searchCalendars(
+  calendar: ReturnType<typeof getCalendarClient>,
+  calendarIds: string[],
+  timeMin: string,
+  timeMax: string,
+  query: string | undefined
+): Promise<string[]> {
+  const results: string[] = [];
+  for (const calId of calendarIds) {
+    try {
+      const res = await calendar.events.list({
+        calendarId: calId,
+        timeMin,
+        timeMax,
+        q: query,
+        singleEvents: true,
+        orderBy: "startTime",
+        maxResults: 20,
+      });
+
+      const events = res.data.items ?? [];
+      for (const event of events) {
+        const start = event.start?.dateTime ?? event.start?.date ?? "";
+        const end = event.end?.dateTime ?? event.end?.date ?? "";
+        results.push(
+          [
+            `ID: ${event.id}`,
+            `Calendar: ${calId}`,
+            `Title: ${event.summary ?? "(no title)"}`,
+            `Start: ${start}`,
+            `End: ${end}`,
+            `Location: ${event.location ?? ""}`,
+          ].join("\n")
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      results.push(`[Error reading calendar ${calId}: ${msg}]`);
+    }
+  }
+  return results;
+}
 
 // --- Handlers ---
 
@@ -98,38 +163,15 @@ async function handleCalendarSearch(
   const timeMax = input.time_max ? String(input.time_max) : weekFromNow;
   const query = input.query ? String(input.query) : undefined;
 
-  const allResults: string[] = [];
+  const allResults = await searchCalendars(calendar, calendarIds, timeMin, timeMax, query);
 
-  for (const calId of calendarIds) {
-    try {
-      const res = await calendar.events.list({
-        calendarId: calId,
-        timeMin,
-        timeMax,
-        q: query,
-        singleEvents: true,
-        orderBy: "startTime",
-        maxResults: 20,
-      });
-
-      const events = res.data.items ?? [];
-      for (const event of events) {
-        const start = event.start?.dateTime ?? event.start?.date ?? "";
-        const end = event.end?.dateTime ?? event.end?.date ?? "";
-        allResults.push(
-          [
-            `ID: ${event.id}`,
-            `Calendar: ${calId}`,
-            `Title: ${event.summary ?? "(no title)"}`,
-            `Start: ${start}`,
-            `End: ${end}`,
-            `Location: ${event.location ?? ""}`,
-          ].join("\n")
-        );
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      allResults.push(`[Error reading calendar ${calId}: ${msg}]`);
+  // If a text query returned no results, retry without the query filter
+  // (Google Calendar's q parameter can be finicky with partial matches)
+  if (allResults.length === 0 && query) {
+    const broadResults = await searchCalendars(calendar, calendarIds, timeMin, timeMax, undefined);
+    if (broadResults.length > 0) {
+      return `No exact matches for "${query}", but here are all events in that time range:\n\n` +
+        broadResults.join("\n---\n");
     }
   }
 
@@ -202,8 +244,26 @@ async function handleCalendarCreate(
   return `Event created: "${res.data.summary}" on ${res.data.start?.dateTime ?? res.data.start?.date}`;
 }
 
+async function handleCalendarDelete(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const account = ctx.resources.google_accounts[0];
+  if (!account) return "No Google account configured for this user.";
+
+  const calendar = getCalendarClient(account);
+
+  await calendar.events.delete({
+    calendarId: String(input.calendar_id),
+    eventId: String(input.event_id),
+  });
+
+  return `Event deleted (ID: ${input.event_id})`;
+}
+
 export const calendarHandlers = new Map<string, ToolHandler>([
   ["calendar_search", handleCalendarSearch],
   ["calendar_read", handleCalendarRead],
   ["calendar_create", handleCalendarCreate],
+  ["calendar_delete", handleCalendarDelete],
 ]);
