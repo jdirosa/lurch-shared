@@ -226,10 +226,23 @@ function saveAllHistory(store: HistoryStore): void {
 
 const chatHistory = new Map<number, Anthropic.MessageParam[]>();
 
+function sanitizeHistory(history: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  // Remove orphaned tool_result messages at the start (no preceding tool_use)
+  while (history.length > 0 && Array.isArray(history[0]?.content) &&
+         (history[0].content as any[]).some((b: any) => b.type === "tool_result")) {
+    history.shift();
+  }
+  // Ensure history starts with a user message
+  while (history.length > 0 && history[0].role !== "user") {
+    history.shift();
+  }
+  return history;
+}
+
 function getHistory(chatId: number): Anthropic.MessageParam[] {
   if (chatHistory.has(chatId)) return chatHistory.get(chatId)!;
   const all = loadAllHistory();
-  const history = all[String(chatId)] ?? [];
+  const history = sanitizeHistory(all[String(chatId)] ?? []);
   chatHistory.set(chatId, history);
   return history;
 }
@@ -306,9 +319,27 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
   history.push({ role: "user", content: userMessage });
   history.push({ role: "assistant", content: response.content });
 
-  // Trim to max history
+  // Trim to max history — remove pairs from the front, ensuring we never
+  // orphan tool_use/tool_result messages
   while (history.length > MAX_HISTORY) {
-    history.shift();
+    const removed = history.shift();
+    if (!removed) break;
+
+    // If we removed an assistant message containing tool_use blocks,
+    // the next message is a user message with tool_results — remove it too
+    if (removed.role === "assistant" && Array.isArray(removed.content) &&
+        removed.content.some((b: any) => b.type === "tool_use")) {
+      history.shift(); // remove the paired tool_result user message
+    }
+
+    // If we removed a user message with tool_results,
+    // the previous message we kept might now be orphaned — but since we
+    // trim from the front, this means the assistant tool_use was already gone.
+    // However, we might now start with a user tool_result message — clean it up.
+    while (history.length > 0 && Array.isArray(history[0]?.content) &&
+           (history[0].content as any[]).some((b: any) => b.type === "tool_result")) {
+      history.shift();
+    }
   }
   persistHistory(ctx.chatId, history);
 
