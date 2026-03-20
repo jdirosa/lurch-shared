@@ -275,7 +275,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
   let response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 4096,
-    system: systemPrompt,
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     tools,
     messages,
   });
@@ -309,7 +309,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
-      system: systemPrompt,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       tools,
       messages,
     });
@@ -318,31 +318,13 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
   const textBlock = response.content.find((block) => block.type === "text");
   const reply = textBlock && "text" in textBlock ? textBlock.text : "(no response)";
 
-  // Save conversation turn to history
+  // Save only the final user message and assistant text reply — no tool pairs.
+  // Tool call/result pairs are expensive to replay and already did their job.
   history.push({ role: "user", content: userMessage });
-  history.push({ role: "assistant", content: response.content });
+  history.push({ role: "assistant", content: reply });
 
-  // Trim to max history — remove pairs from the front, ensuring we never
-  // orphan tool_use/tool_result messages
   while (history.length > MAX_HISTORY) {
-    const removed = history.shift();
-    if (!removed) break;
-
-    // If we removed an assistant message containing tool_use blocks,
-    // the next message is a user message with tool_results — remove it too
-    if (removed.role === "assistant" && Array.isArray(removed.content) &&
-        removed.content.some((b: any) => b.type === "tool_use")) {
-      history.shift(); // remove the paired tool_result user message
-    }
-
-    // If we removed a user message with tool_results,
-    // the previous message we kept might now be orphaned — but since we
-    // trim from the front, this means the assistant tool_use was already gone.
-    // However, we might now start with a user tool_result message — clean it up.
-    while (history.length > 0 && Array.isArray(history[0]?.content) &&
-           (history[0].content as any[]).some((b: any) => b.type === "tool_result")) {
-      history.shift();
-    }
+    history.shift();
   }
   persistHistory(ctx.chatId, history);
 
