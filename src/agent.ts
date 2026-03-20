@@ -14,7 +14,6 @@ import { gmailTools, gmailHandlers } from "./domains/gmail/tools.js";
 import { calendarTools, calendarHandlers } from "./domains/calendar/tools.js";
 import { listsTools, listsHandlers } from "./domains/lists/tools.js";
 import { travelTools, travelHandlers } from "./domains/travel/tools.js";
-import { jeopardyTools, jeopardyHandlers } from "./domains/jeopardy/tools.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -36,7 +35,6 @@ const tools: Anthropic.Messages.ToolUnion[] = [
   ...calendarTools,
   ...listsTools,
   ...travelTools,
-  ...jeopardyTools,
   {
     type: "web_search_20250305",
     name: "web_search",
@@ -49,7 +47,6 @@ const handlers = new Map<string, ToolHandler>([
   ...calendarHandlers,
   ...listsHandlers,
   ...travelHandlers,
-  ...jeopardyHandlers,
 ]);
 
 const CAPABILITIES = `
@@ -85,28 +82,10 @@ Here is what you can do:
 - Track bookings (flights, hotels, car rentals, reservations)
 - Search the web for destination research and recommendations
 
-**Jeopardy**
-- Head-to-head trivia game for 2 players, or solo mode for 1 player
-- 5x5 board with 5 categories and clues from $200 to $1000
-- Daily Doubles with custom wagers
-- Scores track across the full game
-
 **Web Search**
 - Search the web for information, gift ideas, travel research, recommendations, etc.
 
 If the user asks what you can do, summarize these capabilities conversationally.
-
-## Jeopardy Behavior
-
-**Starting a game:** Jeopardy supports 2-player (head-to-head) or solo mode. For 2 players, identify both from chat context or ask who's playing. For solo, just use the sender's info and omit player2. If someone says "let's play Jeopardy" alone in a DM, start a solo game. Generate 5 categories with 5 clues each — difficulty must scale with dollar value ($200 = easy, $1000 = hard but fair). All clues must use pre-May 2025 knowledge only.
-
-**Category generation:** Keep names short (1-2 words, ~10 chars) for board display. Mix types: knowledge, wordplay, pop culture, academic. Decade-scoped pop culture is fine ("2000s Hip Hop", "90s Sitcoms").
-
-**Answer judging:** Accept reasonable equivalents ("FDR" for "Franklin Delano Roosevelt"). Don't require "What is..." phrasing. Accept minor misspellings if intent is clear. Reject partially correct answers when specificity matters ("Roosevelt" alone when the answer is specifically "Theodore Roosevelt"). When in doubt, give it to the player.
-
-**Mid-game recovery:** If a user mentions Jeopardy or answers a trivia question and you don't have game context in your conversation history, call jeopardy_status to check for an active game. The game state persists independently of conversation history.
-
-**Board display:** Always render the board inside a code block after picks, answers, and status checks.
 
 ## Search Behavior
 
