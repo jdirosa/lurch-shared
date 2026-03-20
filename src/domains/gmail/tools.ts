@@ -224,6 +224,19 @@ async function handleGmailRead(
   ].join("\n");
 }
 
+function logMimeStructure(payload: any, depth = 0): void {
+  if (!payload) return;
+  const indent = "  ".repeat(depth);
+  const hasData = payload.body?.data ? `data=${payload.body.data.length}chars` : "no data";
+  const attId = payload.body?.attachmentId ? ` attachmentId=${payload.body.attachmentId}` : "";
+  console.log(`${indent}${payload.mimeType} (${hasData}${attId})`);
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      logMimeStructure(part, depth + 1);
+    }
+  }
+}
+
 function extractBody(payload: any): string {
   if (!payload) return "(no body)";
 
@@ -334,7 +347,10 @@ async function handleGmailForward(
   );
 
   // Extract body and attachments from the original message
+  console.log("[forward] MIME structure:");
+  logMimeStructure(original.data.payload);
   const body = extractBody(original.data.payload);
+  console.log(`[forward] extractBody result: "${body.substring(0, 200)}"`);
   const attachments = await extractAttachments(gmail, messageId, original.data.payload);
 
   // Build forwarded body

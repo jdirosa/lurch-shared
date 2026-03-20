@@ -258,7 +258,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
   let response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: systemPrompt,
     tools,
     messages,
@@ -292,7 +292,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
     response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
+      max_tokens: 4096,
       system: systemPrompt,
       tools,
       messages,
