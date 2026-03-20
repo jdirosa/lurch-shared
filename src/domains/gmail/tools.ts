@@ -245,6 +245,13 @@ function extractBody(payload: any): string {
     return Buffer.from(payload.body.data, "base64url").toString("utf-8");
   }
 
+  // Check for top-level text/html (common in forwarded/marketing emails)
+  if (payload.mimeType === "text/html" && payload.body?.data && payload.body.data.length > 0) {
+    const html = Buffer.from(payload.body.data, "base64url").toString("utf-8");
+    const text = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    if (text) return text;
+  }
+
   // Check parts — collect candidates, preferring text/plain over text/html
   if (payload.parts) {
     const textParts: any[] = [];
