@@ -206,16 +206,40 @@ function saveAllHistory(store: HistoryStore): void {
 const chatHistory = new Map<number, Anthropic.MessageParam[]>();
 
 function sanitizeHistory(history: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
-  // Remove orphaned tool_result messages at the start (no preceding tool_use)
-  while (history.length > 0 && Array.isArray(history[0]?.content) &&
-         (history[0].content as any[]).some((b: any) => b.type === "tool_result")) {
-    history.shift();
+  // Walk the history and remove any assistant tool_use message whose
+  // following message isn't a matching tool_result (and vice versa)
+  const clean: Anthropic.MessageParam[] = [];
+
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
+    const isToolUse = msg.role === "assistant" && Array.isArray(msg.content) &&
+      msg.content.some((b: any) => b.type === "tool_use");
+    const isToolResult = msg.role === "user" && Array.isArray(msg.content) &&
+      (msg.content as any[]).some((b: any) => b.type === "tool_result");
+
+    if (isToolUse) {
+      // Only keep if next message is the matching tool_result
+      const next = history[i + 1];
+      if (next?.role === "user" && Array.isArray(next.content) &&
+          (next.content as any[]).some((b: any) => b.type === "tool_result")) {
+        clean.push(msg);
+        clean.push(next);
+        i++; // skip the tool_result, we already added it
+      }
+      // else: orphaned tool_use, skip it
+    } else if (isToolResult) {
+      // Orphaned tool_result (no preceding tool_use), skip it
+    } else {
+      clean.push(msg);
+    }
   }
+
   // Ensure history starts with a user message
-  while (history.length > 0 && history[0].role !== "user") {
-    history.shift();
+  while (clean.length > 0 && clean[0].role !== "user") {
+    clean.shift();
   }
-  return history;
+
+  return clean;
 }
 
 function getHistory(chatId: number): Anthropic.MessageParam[] {
