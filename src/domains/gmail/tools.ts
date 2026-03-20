@@ -338,7 +338,7 @@ async function handleGmailForward(
   const to = sanitizeHeader(String(input.to));
   const note = input.note ? String(input.note) : undefined;
 
-  // Get the original message in raw RFC 2822 format — preserves HTML, attachments, everything
+  // Get the original raw RFC 2822 message
   const original = await gmail.users.messages.get({
     userId: "me",
     id: messageId,
@@ -348,64 +348,91 @@ async function handleGmailForward(
   const rawBase64 = original.data.raw;
   if (!rawBase64) return "Error: Could not retrieve the original email.";
 
-  // Also get headers for subject/metadata (raw format doesn't parse them)
-  const metadata = await gmail.users.messages.get({
-    userId: "me",
-    id: messageId,
-    format: "metadata",
-    metadataHeaders: ["Subject", "From", "Date", "To"],
-  });
+  // Decode the raw message
+  const rawMessage = Buffer.from(rawBase64, "base64url").toString("utf-8");
 
-  const headers = metadata.data.payload?.headers ?? [];
-  const getHeader = (name: string) =>
-    headers.find((h) => h.name === name)?.value ?? "";
+  // Split into headers and body at the first blank line
+  const headerBodySplit = rawMessage.indexOf("\r\n\r\n");
+  const originalHeaders = rawMessage.substring(0, headerBodySplit);
+  const originalBody = rawMessage.substring(headerBodySplit); // includes the \r\n\r\n
 
-  const origSubject = getHeader("Subject");
-  const origFrom = getHeader("From");
-  const origDate = getHeader("Date");
-  const origTo = getHeader("To");
+  // Extract headers we need from the original
+  const headerLines = originalHeaders.split(/\r\n(?!\s)/); // handle folded headers
+  const getOrigHeader = (name: string): string => {
+    const line = headerLines.find((l) => l.toLowerCase().startsWith(name.toLowerCase() + ":"));
+    return line ? line.substring(name.length + 1).trim() : "";
+  };
+
+  const origSubject = getOrigHeader("Subject");
+  const origFrom = getOrigHeader("From");
+  const origDate = getOrigHeader("Date");
+  const origTo = getOrigHeader("To");
+  const origContentType = getOrigHeader("Content-Type");
 
   const fwdSubject = sanitizeHeader(
     origSubject.startsWith("Fwd:") ? origSubject : `Fwd: ${origSubject}`
   );
 
-  // Wrap the original raw message as a message/rfc822 attachment
-  const boundary = `boundary_${Date.now()}`;
-  const noteText = note ? `${note}\n\n` : "";
-  const preamble = [
-    noteText,
-    "---------- Forwarded message ---------",
-    `From: ${origFrom}`,
-    `Date: ${origDate}`,
-    `Subject: ${origSubject}`,
-    `To: ${origTo}`,
-  ].join("\n");
+  // Keep only the Content-Type and Content-Transfer-Encoding from original headers
+  // (these describe the body format), replace everything else with new headers
+  const preservedHeaders: string[] = [];
+  for (const line of headerLines) {
+    const lower = line.toLowerCase();
+    if (lower.startsWith("content-type:") || lower.startsWith("content-transfer-encoding:") || lower.startsWith("mime-version:")) {
+      preservedHeaders.push(line);
+    }
+  }
 
-  // Convert raw from base64url to standard base64
-  const rawStdBase64 = rawBase64.replace(/-/g, "+").replace(/_/g, "/");
+  // If the original is not multipart, we can just add a note as a prefix.
+  // If it IS multipart, we need to wrap it.
+  const isMultipart = origContentType.toLowerCase().includes("multipart");
 
-  const mime = [
-    `To: ${to}`,
-    `Subject: ${fwdSubject}`,
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=utf-8",
-    "",
-    preamble,
-    "",
-    `--${boundary}`,
-    "Content-Type: message/rfc822",
-    "Content-Disposition: attachment",
-    "Content-Transfer-Encoding: base64",
-    "",
-    rawStdBase64,
-    `--${boundary}--`,
-  ].join("\r\n");
+  let forwardedMessage: string;
+
+  if (isMultipart) {
+    // For multipart emails, wrap in a new multipart/mixed with the note + original
+    const boundary = `fwd_${Date.now()}`;
+    const noteSection = note ? `${note}\n\n` : "";
+    const fwdHeader = [
+      noteSection + "---------- Forwarded message ---------",
+      `From: ${origFrom}`,
+      `Date: ${origDate}`,
+      `Subject: ${origSubject}`,
+      `To: ${origTo}`,
+    ].join("\n");
+
+    forwardedMessage = [
+      `To: ${to}`,
+      `Subject: ${fwdSubject}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      fwdHeader,
+      "",
+      `--${boundary}`,
+      // Re-attach original Content-Type so the body is interpreted correctly
+      ...preservedHeaders.filter((h) => !h.toLowerCase().startsWith("mime-version:")),
+      originalBody.trimStart(),
+      `--${boundary}--`,
+    ].join("\r\n");
+  } else {
+    // Simple (non-multipart) email — just swap headers, keep body as-is
+    const newHeaders = [
+      `To: ${to}`,
+      `Subject: ${fwdSubject}`,
+      "MIME-Version: 1.0",
+      ...preservedHeaders.filter((h) => !h.toLowerCase().startsWith("mime-version:")),
+    ].join("\r\n");
+
+    forwardedMessage = newHeaders + originalBody;
+  }
 
   await gmail.users.messages.send({
     userId: "me",
-    requestBody: { raw: Buffer.from(mime).toString("base64url") },
+    requestBody: { raw: Buffer.from(forwardedMessage).toString("base64url") },
   });
 
   return `Forwarded "${origSubject}" to ${to}.`;
