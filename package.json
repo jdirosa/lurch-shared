@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "tsc && node dist/telegram.js",
     "dev": "npx tsc --watch",
+    "chat": "tsc && node dist/console.js",
     "auth": "tsx scripts/auth.ts"
   },
   "dependencies": {
