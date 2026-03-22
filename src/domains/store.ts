@@ -42,6 +42,7 @@ export interface Recipe {
 }
 
 export interface UserStore {
+  dietary?: string;
   lists: Record<string, string[]>;
   gifts: Record<string, GiftEntry>;
   trips: Record<string, TripEntry>;

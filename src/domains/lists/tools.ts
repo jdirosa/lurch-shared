@@ -249,6 +249,32 @@ export const listsTools: Anthropic.Tool[] = [
       required: ["name"],
     },
   },
+  {
+    name: "dietary_set",
+    description:
+      "Set or update the user's current dietary preferences/restrictions. " +
+      "This is free-text — could be 'vegetarian', 'keto, no dairy', 'no red meat', etc. " +
+      "Pass an empty string to clear. These preferences inform recipe suggestions and modifications.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        dietary: {
+          type: "string",
+          description: "Dietary preferences/restrictions (empty string to clear)",
+        },
+      },
+      required: ["dietary"],
+    },
+  },
+  {
+    name: "dietary_get",
+    description: "Get the user's current dietary preferences/restrictions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // --- List handlers ---
@@ -519,6 +545,35 @@ async function handleRecipesDelete(
   return `Deleted recipe "${key}".`;
 }
 
+// --- Dietary handlers ---
+
+async function handleDietarySet(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const value = String(input.dietary).trim();
+  if (value) {
+    store.dietary = value;
+    saveUserStore(ctx, store);
+    return `Dietary preferences set to: ${value}`;
+  } else {
+    delete store.dietary;
+    saveUserStore(ctx, store);
+    return "Dietary preferences cleared.";
+  }
+}
+
+async function handleDietaryGet(
+  _input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  return store.dietary
+    ? `Current dietary preferences: ${store.dietary}`
+    : "No dietary preferences set.";
+}
+
 export const listsHandlers = new Map<string, ToolHandler>([
   ["lists_view", handleListsView],
   ["lists_add", handleListsAdd],
@@ -533,4 +588,6 @@ export const listsHandlers = new Map<string, ToolHandler>([
   ["recipes_save", handleRecipesSave],
   ["recipes_view", handleRecipesView],
   ["recipes_delete", handleRecipesDelete],
+  ["dietary_set", handleDietarySet],
+  ["dietary_get", handleDietaryGet],
 ]);
