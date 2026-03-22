@@ -34,10 +34,18 @@ export interface TripEntry {
   bookings: TripBooking[];
 }
 
+export interface Recipe {
+  name: string;
+  notes?: string;
+  ingredients: string[];
+  steps?: string[];
+}
+
 export interface UserStore {
   lists: Record<string, string[]>;
   gifts: Record<string, GiftEntry>;
   trips: Record<string, TripEntry>;
+  recipes: Record<string, Recipe>;
   approved_emails: string[];
 }
 
@@ -64,6 +72,7 @@ export function loadUserStore(ctx: UserContext): UserStore {
   if (store) {
     // Ensure keys exist for stores created before newer features
     if (!store.trips) store.trips = {};
+    if (!store.recipes) store.recipes = {};
     if (!store.approved_emails) store.approved_emails = [];
     return store;
   }
@@ -71,6 +80,7 @@ export function loadUserStore(ctx: UserContext): UserStore {
     lists: Object.fromEntries(DEFAULT_LISTS.map((n) => [n, []])),
     gifts: {},
     trips: {},
+    recipes: {},
     approved_emails: [],
   };
 }

@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { ToolHandler } from "../../agent.js";
 import type { UserContext } from "../../users.js";
 import { loadUserStore, saveUserStore } from "../store.js";
-import type { GiftEntry } from "../store.js";
+import type { GiftEntry, Recipe } from "../store.js";
 
 // --- Tool definitions ---
 
@@ -186,6 +186,67 @@ export const listsTools: Anthropic.Tool[] = [
         },
       },
       required: ["person"],
+    },
+  },
+  {
+    name: "recipes_save",
+    description:
+      "Save or update a recipe. Overwrites any existing recipe with the same name. " +
+      "Ingredients and steps can be as detailed or as casual as the user wants — " +
+      "'2 cups flour' and 'flour' are both fine. Steps are optional.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: {
+          type: "string",
+          description: "Recipe name (e.g., 'Chicken Tikka Masala', 'Mom\\'s Chili')",
+        },
+        ingredients: {
+          type: "array",
+          items: { type: "string" },
+          description: "List of ingredients — any level of detail",
+        },
+        steps: {
+          type: "array",
+          items: { type: "string" },
+          description: "Preparation steps (optional — omit if user just wants ingredients)",
+        },
+        notes: {
+          type: "string",
+          description: "Free-text notes (dietary info, source URL, tweaks, etc.)",
+        },
+      },
+      required: ["name", "ingredients"],
+    },
+  },
+  {
+    name: "recipes_view",
+    description:
+      "View saved recipes. If no name given, lists all recipe names. " +
+      "If a name is given, shows the full recipe with ingredients, steps, and notes.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: {
+          type: "string",
+          description: "Recipe name to view. Omit to list all recipes.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "recipes_delete",
+    description: "Delete a saved recipe by name.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: {
+          type: "string",
+          description: "Recipe name to delete",
+        },
+      },
+      required: ["name"],
     },
   },
 ];
@@ -389,6 +450,75 @@ async function handleGiftsRemovePerson(
   return `Removed ${key} from the gift tracker.`;
 }
 
+// --- Recipe handlers ---
+
+function findRecipe(recipes: Record<string, Recipe>, name: string): string | undefined {
+  const lower = name.toLowerCase();
+  return Object.keys(recipes).find((k) => k.toLowerCase() === lower);
+}
+
+async function handleRecipesSave(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const name = String(input.name);
+  const ingredients = input.ingredients as string[];
+  const steps = input.steps as string[] | undefined;
+  const notes = input.notes ? String(input.notes) : undefined;
+
+  const key = findRecipe(store.recipes, name) ?? name;
+  store.recipes[key] = { name: key, ingredients, steps, notes };
+  saveUserStore(ctx, store);
+
+  return `Saved recipe "${key}" (${ingredients.length} ingredients${steps ? `, ${steps.length} steps` : ""}).`;
+}
+
+async function handleRecipesView(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const nameInput = input.name ? String(input.name) : undefined;
+
+  if (!nameInput) {
+    const names = Object.keys(store.recipes);
+    if (names.length === 0) return "No saved recipes yet.";
+    return names.map((n) => {
+      const r = store.recipes[n];
+      const note = r.notes ? ` — ${r.notes}` : "";
+      return `${n} (${r.ingredients.length} ingredients)${note}`;
+    }).join("\n");
+  }
+
+  const key = findRecipe(store.recipes, nameInput);
+  if (!key) return `No recipe named "${nameInput}".`;
+
+  const r = store.recipes[key];
+  const lines = [r.name];
+  if (r.notes) lines.push(`Notes: ${r.notes}`);
+  lines.push("", "Ingredients:");
+  r.ingredients.forEach((ing) => lines.push(`  - ${ing}`));
+  if (r.steps && r.steps.length > 0) {
+    lines.push("", "Steps:");
+    r.steps.forEach((step, i) => lines.push(`  ${i + 1}. ${step}`));
+  }
+  return lines.join("\n");
+}
+
+async function handleRecipesDelete(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const key = findRecipe(store.recipes, String(input.name));
+  if (!key) return `No recipe named "${input.name}".`;
+
+  delete store.recipes[key];
+  saveUserStore(ctx, store);
+  return `Deleted recipe "${key}".`;
+}
+
 export const listsHandlers = new Map<string, ToolHandler>([
   ["lists_view", handleListsView],
   ["lists_add", handleListsAdd],
@@ -400,4 +530,7 @@ export const listsHandlers = new Map<string, ToolHandler>([
   ["gifts_remove_ideas", handleGiftsRemoveIdeas],
   ["gifts_update_notes", handleGiftsUpdateNotes],
   ["gifts_remove_person", handleGiftsRemovePerson],
+  ["recipes_save", handleRecipesSave],
+  ["recipes_view", handleRecipesView],
+  ["recipes_delete", handleRecipesDelete],
 ]);
