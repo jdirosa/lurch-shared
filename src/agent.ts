@@ -41,6 +41,12 @@ const tools: Anthropic.Messages.ToolUnion[] = [
   },
 ];
 
+// Cache all tool definitions — tag the last regular tool (before web_search)
+const lastRegularIdx = tools.length - 2; // last tool before web_search
+if (lastRegularIdx >= 0 && tools[lastRegularIdx].type !== "web_search_20250305") {
+  (tools[lastRegularIdx] as any).cache_control = { type: "ephemeral" };
+}
+
 const handlers = new Map<string, ToolHandler>([
   ["echo", async (input) => String(input.message)],
   ...gmailHandlers,
