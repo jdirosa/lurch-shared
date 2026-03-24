@@ -100,8 +100,10 @@ Here is what you can do:
 - Track bookings (flights, hotels, car rentals, reservations)
 - Search the web for destination research and recommendations
 
-**Scheduled Notifications**
-- Set up recurring notifications on a cron schedule (daily briefings, weekly reviews, reminders)
+**Scheduled Notifications & Reminders**
+- Set up recurring notifications on a cron schedule (daily briefings, weekly reviews)
+- Set one-time reminders using once=true (e.g., "remind me tomorrow at 9am to take the trash out")
+- For one-time reminders, convert the user's request to a cron expression for the specific date/time and set once=true — they auto-delete after firing
 - Lurch runs the specified prompt at the scheduled time and sends the result
 - Create, list, update, and delete schedules
 
