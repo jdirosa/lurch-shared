@@ -41,6 +41,14 @@ export interface Recipe {
   steps?: string[];
 }
 
+export interface ScheduleEntry {
+  id: string;
+  label: string;
+  cron: string;
+  prompt: string;
+  timezone?: string;
+}
+
 export interface UserStore {
   dietary?: string;
   lists: Record<string, string[]>;
@@ -48,6 +56,7 @@ export interface UserStore {
   trips: Record<string, TripEntry>;
   recipes: Record<string, Recipe>;
   approved_emails: string[];
+  schedules: ScheduleEntry[];
 }
 
 type AllStores = Record<string, UserStore>;
@@ -75,6 +84,7 @@ export function loadUserStore(ctx: UserContext): UserStore {
     if (!store.trips) store.trips = {};
     if (!store.recipes) store.recipes = {};
     if (!store.approved_emails) store.approved_emails = [];
+    if (!store.schedules) store.schedules = [];
     return store;
   }
   return {
@@ -83,6 +93,7 @@ export function loadUserStore(ctx: UserContext): UserStore {
     trips: {},
     recipes: {},
     approved_emails: [],
+    schedules: [],
   };
 }
 

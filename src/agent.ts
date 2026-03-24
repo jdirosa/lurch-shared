@@ -14,6 +14,7 @@ import { gmailTools, gmailHandlers } from "./domains/gmail/tools.js";
 import { calendarTools, calendarHandlers } from "./domains/calendar/tools.js";
 import { listsTools, listsHandlers } from "./domains/lists/tools.js";
 import { travelTools, travelHandlers } from "./domains/travel/tools.js";
+import { scheduleTools, scheduleHandlers } from "./domains/schedule/tools.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -35,6 +36,7 @@ const tools: Anthropic.Messages.ToolUnion[] = [
   ...calendarTools,
   ...listsTools,
   ...travelTools,
+  ...scheduleTools,
   {
     type: "web_search_20250305",
     name: "web_search",
@@ -53,6 +55,7 @@ const handlers = new Map<string, ToolHandler>([
   ...calendarHandlers,
   ...listsHandlers,
   ...travelHandlers,
+  ...scheduleHandlers,
 ]);
 
 const CAPABILITIES = `
@@ -96,6 +99,11 @@ Here is what you can do:
 - Build day-by-day itineraries
 - Track bookings (flights, hotels, car rentals, reservations)
 - Search the web for destination research and recommendations
+
+**Scheduled Notifications**
+- Set up recurring notifications on a cron schedule (daily briefings, weekly reviews, reminders)
+- Lurch runs the specified prompt at the scheduled time and sends the result
+- Create, list, update, and delete schedules
 
 **Web Search**
 - Search the web for information, gift ideas, travel research, recommendations, etc.

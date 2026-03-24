@@ -14,12 +14,14 @@
     "@anthropic-ai/sdk": "^0.80.0",
     "dotenv": "^16.4.0",
     "googleapis": "^171.4.0",
+    "node-cron": "^4.2.1",
     "node-telegram-bot-api": "^0.66.0",
     "open": "^11.0.0",
     "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
     "@types/node-telegram-bot-api": "^0.64.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0"

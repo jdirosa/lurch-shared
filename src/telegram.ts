@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { runAgent, clearHistory } from "./agent.js";
 import { resolveContext } from "./users.js";
 import { markdownToTelegramHtml } from "./format.js";
+import { initScheduler } from "./scheduler.js";
 
 const bot = new TelegramBot(config.telegramBotToken, { polling: true });
 const botMention = `@${config.telegramBotUsername}`;
@@ -64,4 +65,5 @@ bot.on("message", async (msg) => {
   }
 });
 
+initScheduler(bot);
 console.log("Lurch is running.");
