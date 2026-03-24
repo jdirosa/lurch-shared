@@ -55,7 +55,7 @@ function registerJob(chatId: number, schedule: Schedule): void {
       onRemoveCallback?.(chatId, schedule.id);
     }
   }, {
-    timezone: schedule.timezone || "America/Toronto",
+    timezone: schedule.timezone ?? "America/Toronto",
   });
 
   activeTasks.set(key, task);

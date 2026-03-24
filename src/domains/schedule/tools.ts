@@ -83,7 +83,7 @@ async function handleScheduleSet(
   const label = String(input.label);
   const cronExpr = String(input.cron);
   const prompt = String(input.prompt);
-  const timezone = input.timezone ? String(input.timezone) : undefined;
+  const timezone = input.timezone ? String(input.timezone) : ctx.timezone;
   const once = input.once === true;
 
   const schedule = { id, label, cron: cronExpr, prompt, timezone, once: once || undefined };

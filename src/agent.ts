@@ -103,7 +103,7 @@ Here is what you can do:
 **Scheduled Notifications & Reminders**
 - Set up recurring notifications on a cron schedule (daily briefings, weekly reviews)
 - Set one-time reminders using once=true (e.g., "remind me tomorrow at 9am to take the trash out")
-- For one-time reminders, convert the user's request to a cron expression for the specific date/time and set once=true — they auto-delete after firing
+- For one-time reminders, convert the user's request to a cron expression for the specific date/time and set once=true — they auto-delete after firing, so NEVER call schedule_delete on a once=true reminder
 - Lurch runs the specified prompt at the scheduled time and sends the result
 - Create, list, update, and delete schedules
 
@@ -209,13 +209,21 @@ Save these details as notes on the person. Over time, when the user mentions new
 `.trim();
 
 function buildSystemPrompt(ctx: UserContext): string {
-  const today = new Date().toLocaleDateString("en-US", {
+  const now = new Date();
+  const tz = ctx.timezone;
+  const today = now.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: tz,
   });
-  const context = `Today is ${today}. You are helping ${ctx.chatName}. The person messaging you right now is ${ctx.senderName}.`;
+  const time = now.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: tz,
+  });
+  const context = `Today is ${today}. The current time is ${time} (${tz}). You are helping ${ctx.chatName}. The person messaging you right now is ${ctx.senderName}.`;
   return `${PERSONALITY}\n\n${context}\n\n${CAPABILITIES}`;
 }
 

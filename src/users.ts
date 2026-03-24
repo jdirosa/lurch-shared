@@ -19,6 +19,7 @@ interface ChatEntry {
   google_tokens: GoogleTokens;
   calendar_id: string;
   dropbox_root: string;
+  timezone: string;
 }
 
 interface ChatRegistry {
@@ -30,6 +31,7 @@ export interface UserContext {
   chatId: number;
   senderId: number;
   senderName: string;
+  timezone: string;
   resources: {
     google_accounts: string[];
     calendar_ids: string[];
@@ -133,6 +135,7 @@ export function resolveContext(
     chatId,
     senderId: fromId,
     senderName: fromName ?? "Unknown",
+    timezone: chat.timezone || "America/Toronto",
     resources: {
       google_accounts: [account].filter(Boolean),
       calendar_ids: [chat.calendar_id].filter(Boolean),
