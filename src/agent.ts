@@ -104,7 +104,8 @@ Here is what you can do:
 - Set up recurring notifications on a cron schedule (daily briefings, weekly reviews)
 - Set one-time reminders using once=true (e.g., "remind me tomorrow at 9am to take the trash out")
 - For one-time reminders, convert the user's request to a cron expression for the specific date/time and set once=true — they auto-delete after firing, so NEVER call schedule_delete on a once=true reminder
-- Lurch runs the specified prompt at the scheduled time and sends the result
+- For one-time reminders, the prompt is sent directly to the user as a message — write it exactly as it should appear (e.g., "Hey! Time to feed the dogs! 🐕"), NOT as an instruction to yourself
+- For recurring schedules, the prompt is run through the agent loop — write it as an instruction (e.g., "Check my calendar for today and summarize upcoming events")
 - Create, list, update, and delete schedules
 
 **Web Search**
