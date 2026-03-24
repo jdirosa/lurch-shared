@@ -9,7 +9,8 @@
         "expiry": ""
       },
       "calendar_id": "",
-      "dropbox_root": ""
+      "dropbox_root": "",
+      "timezone": "America/Toronto"
     },
     "-100987654": {
       "name": "Family Group",
@@ -20,7 +21,8 @@
         "expiry": ""
       },
       "calendar_id": "",
-      "dropbox_root": ""
+      "dropbox_root": "",
+      "timezone": "America/Toronto"
     }
   }
 }
