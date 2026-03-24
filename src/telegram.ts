@@ -5,7 +5,16 @@ import { resolveContext } from "./users.js";
 import { markdownToTelegramHtml } from "./format.js";
 import { initScheduler } from "./scheduler.js";
 
-const bot = new TelegramBot(config.telegramBotToken, { polling: true });
+function log(msg: string) {
+  console.log(`[${new Date().toISOString()}] ${msg}`);
+}
+
+const bot = new TelegramBot(config.telegramBotToken, {
+  polling: {
+    interval: 2000,
+    params: { timeout: 30 },
+  },
+});
 const botMention = `@${config.telegramBotUsername}`;
 
 let botId: number | undefined;
@@ -14,15 +23,15 @@ bot.getMe().then((me) => { botId = me.id; });
 bot.on("message", async (msg) => {
   if (!msg.text || !msg.from) return;
   if (msg.message_id === 0) {
-    console.log(`[msg] skipped — message_id is 0, chatId=${msg.chat.id}`);
+    log(`[msg] skipped — message_id is 0, chatId=${msg.chat.id}`);
     return;
   }
 
-  console.log(`[msg] chatId=${msg.chat.id} userId=${msg.from.id} (${msg.from.first_name})`);
+  log(`[msg] chatId=${msg.chat.id} userId=${msg.from.id} (${msg.from.first_name})`);
 
   const ctx = resolveContext(msg.from.id, msg.chat.id, msg.from.first_name);
   if (!ctx) {
-    console.log(`[msg] ignored — unrecognized chatId=${msg.chat.id} userId=${msg.from.id} (${msg.from.first_name})`);
+    log(`[msg] ignored — unrecognized chatId=${msg.chat.id} userId=${msg.from.id} (${msg.from.first_name})`);
     return;
   }
 
@@ -60,10 +69,10 @@ bot.on("message", async (msg) => {
     await bot.sendMessage(msg.chat.id, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
   } catch (err) {
     clearInterval(typingInterval);
-    console.error("Agent error:", err);
+    log(`[error] Agent error: ${err}`);
     await bot.sendMessage(msg.chat.id, "Something went wrong. Try again.");
   }
 });
 
 initScheduler(bot);
-console.log("Lurch is running.");
+log("Lurch is running.");
