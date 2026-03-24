@@ -313,6 +313,13 @@ export function clearHistory(chatId: number): void {
   saveAllHistory(all);
 }
 
+function extractText(content: Anthropic.ContentBlock[]): string {
+  return content
+    .filter((block): block is Anthropic.TextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("\n\n");
+}
+
 export async function runAgent(userMessage: string, ctx: UserContext): Promise<string> {
   const systemPrompt = buildSystemPrompt(ctx);
   const history = getHistory(ctx.chatId);
@@ -389,11 +396,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     });
 
     log(`[agent] continuation stop_reason=${continuation.stop_reason}`);
-    const contText = continuation.content.find((block) => block.type === "text");
-    const original = response.content.find((block) => block.type === "text");
-    const originalText = original && "text" in original ? original.text : "";
-    const contTextStr = contText && "text" in contText ? contText.text : "";
-    const reply = originalText + contTextStr;
+    const reply = extractText(response.content) + extractText(continuation.content);
 
     history.push({ role: "user", content: userMessage });
     history.push({ role: "assistant", content: reply });
@@ -402,8 +405,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     return reply;
   }
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  const reply = textBlock && "text" in textBlock ? textBlock.text : "(no response)";
+  const reply = extractText(response.content) || "(no response)";
 
   // Save only the final user message and assistant text reply — no tool pairs.
   // Tool call/result pairs are expensive to replay and already did their job.
