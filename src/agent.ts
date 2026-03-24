@@ -333,12 +333,11 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
   log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length} usage=${response.usage.input_tokens}in/${response.usage.output_tokens}out`);
 
-  let toolUseBlocks = response.content.filter(
-    (block): block is Anthropic.ToolUseBlock =>
-      block.type === "tool_use"
-  );
-
-  while (toolUseBlocks.length > 0) {
+  while (response.stop_reason === "tool_use") {
+    const toolUseBlocks = response.content.filter(
+      (block): block is Anthropic.ToolUseBlock =>
+        block.type === "tool_use"
+    );
 
     const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (block) => {
@@ -369,11 +368,6 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     });
 
     log(`[agent] loop stop_reason=${response.stop_reason} blocks=${response.content.length} usage=${response.usage.input_tokens}in/${response.usage.output_tokens}out`);
-
-    toolUseBlocks = response.content.filter(
-      (block): block is Anthropic.ToolUseBlock =>
-        block.type === "tool_use"
-    );
   }
 
   // If truncated, ask the model to continue
