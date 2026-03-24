@@ -4,6 +4,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { config } from "./config.js";
 import type { UserContext } from "./users.js";
+import { log } from "./log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const personalityPath = join(__dirname, "..", "personality.txt");
@@ -322,11 +323,13 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
   let response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     tools,
     messages,
   });
+
+  log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length}`);
 
   while (response.stop_reason === "tool_use") {
     const toolUseBlocks = response.content.filter(
@@ -356,11 +359,41 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
     response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       tools,
       messages,
     });
+
+    log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length}`);
+  }
+
+  // If truncated, ask the model to continue
+  if (response.stop_reason === "max_tokens") {
+    log("[agent] hit max_tokens, requesting continuation");
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({ role: "user", content: "Continue from where you left off." });
+
+    const continuation = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 8192,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      tools,
+      messages,
+    });
+
+    log(`[agent] continuation stop_reason=${continuation.stop_reason}`);
+    const contText = continuation.content.find((block) => block.type === "text");
+    const original = response.content.find((block) => block.type === "text");
+    const originalText = original && "text" in original ? original.text : "";
+    const contTextStr = contText && "text" in contText ? contText.text : "";
+    const reply = originalText + contTextStr;
+
+    history.push({ role: "user", content: userMessage });
+    history.push({ role: "assistant", content: reply });
+    while (history.length > MAX_HISTORY) history.shift();
+    persistHistory(ctx.chatId, history);
+    return reply;
   }
 
   const textBlock = response.content.find((block) => block.type === "text");
