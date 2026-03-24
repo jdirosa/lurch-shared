@@ -348,7 +348,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
 
     const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (block) => {
-        log(`[agent] tool_call: ${block.name} input=${JSON.stringify(block.input).slice(0, 200)}`);
+        log(`[agent] tool_call: ${block.name}`);
         const handler = handlers.get(block.name);
         let content: string;
         if (handler) {
@@ -360,7 +360,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
         } else {
           content = `Unknown tool: ${block.name}`;
         }
-        log(`[agent] tool_result: ${block.name} len=${content.length} preview=${content.slice(0, 150)}`);
+        log(`[agent] tool_result: ${block.name} len=${content.length}`);
         return { type: "tool_result" as const, tool_use_id: block.id, content };
       })
     );
