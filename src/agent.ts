@@ -321,6 +321,8 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     { role: "user", content: userMessage },
   ];
 
+  log(`[agent] sending history=${history.length} messages=${messages.length}`);
+
   let response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 8192,
@@ -329,7 +331,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     messages,
   });
 
-  log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length}`);
+  log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length} usage=${response.usage.input_tokens}in/${response.usage.output_tokens}out`);
 
   let toolUseBlocks = response.content.filter(
     (block): block is Anthropic.ToolUseBlock =>
@@ -366,7 +368,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
       messages,
     });
 
-    log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length}`);
+    log(`[agent] loop stop_reason=${response.stop_reason} blocks=${response.content.length} usage=${response.usage.input_tokens}in/${response.usage.output_tokens}out`);
 
     toolUseBlocks = response.content.filter(
       (block): block is Anthropic.ToolUseBlock =>
