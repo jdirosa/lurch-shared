@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { PDFParse } from "pdf-parse";
 import { getGmailClient } from "../google-client.js";
 import type { UserContext } from "../../users.js";
 import type { ToolHandler } from "../../agent.js";
@@ -101,6 +102,32 @@ export const gmailTools: Anthropic.Tool[] = [
         },
       },
       required: ["message_id", "to"],
+    },
+  },
+  {
+    name: "gmail_get_attachment",
+    description:
+      "Download and read an email attachment. " +
+      "Supports text files (.txt, .csv, .json, .html, .xml, .md, .log) and PDFs. " +
+      "Use gmail_read first to see the list of attachments with their IDs. " +
+      "Returns the extracted text content of the attachment.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        message_id: {
+          type: "string",
+          description: "The Gmail message ID that contains the attachment",
+        },
+        attachment_id: {
+          type: "string",
+          description: "The attachment ID (from gmail_read output)",
+        },
+        filename: {
+          type: "string",
+          description: "The attachment filename (for determining how to parse it)",
+        },
+      },
+      required: ["message_id", "attachment_id", "filename"],
     },
   },
   {
@@ -208,15 +235,27 @@ async function handleGmailRead(
     headers.find((h) => h.name === name)?.value ?? "";
 
   const body = extractBody(res.data.payload);
+  const attachments = extractAttachments(res.data.payload, String(input.message_id));
 
-  return [
+  const lines = [
     `From: ${get("From")}`,
     `To: ${get("To")}`,
     `Subject: ${get("Subject")}`,
     `Date: ${get("Date")}`,
     "",
     body,
-  ].join("\n");
+  ];
+
+  if (attachments.length > 0) {
+    lines.push("", "--- Attachments ---");
+    for (const att of attachments) {
+      const sizeKB = Math.round(att.size / 1024);
+      lines.push(`- ${att.filename} (${att.mimeType}, ${sizeKB} KB) [attachmentId: ${att.attachmentId}]`);
+    }
+    lines.push("", "Use gmail_get_attachment with the message_id and attachment_id to read an attachment.");
+  }
+
+  return lines.join("\n");
 }
 
 function htmlToText(html: string): string {
@@ -241,6 +280,36 @@ function htmlToText(html: string): string {
     // Collapse 3+ newlines into 2
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+interface AttachmentInfo {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+  messageId: string;
+}
+
+function extractAttachments(payload: any, messageId: string): AttachmentInfo[] {
+  const attachments: AttachmentInfo[] = [];
+
+  function walk(part: any) {
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType ?? "application/octet-stream",
+        size: part.body.size ?? 0,
+        attachmentId: part.body.attachmentId,
+        messageId,
+      });
+    }
+    if (part.parts) {
+      for (const child of part.parts) walk(child);
+    }
+  }
+
+  walk(payload);
+  return attachments;
 }
 
 function extractBody(payload: any): string {
@@ -439,6 +508,75 @@ async function handleGmailForward(
 }
 
 
+const TEXT_EXTENSIONS = new Set([
+  ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".md",
+  ".log", ".yaml", ".yml", ".tsv", ".ini", ".cfg", ".conf",
+  ".js", ".ts", ".py", ".rb", ".sh", ".sql", ".css",
+]);
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_TEXT_CHARS = 50_000; // ~12k tokens
+
+async function handleGetAttachment(
+  input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const account = ctx.resources.google_accounts[0];
+  if (!account) return "No Google account configured for this user.";
+
+  const gmail = getGmailClient(account);
+  const messageId = String(input.message_id);
+  const attachmentId = String(input.attachment_id);
+  const filename = String(input.filename);
+  const ext = filename.includes(".") ? "." + filename.split(".").pop()!.toLowerCase() : "";
+
+  const res = await gmail.users.messages.attachments.get({
+    userId: "me",
+    messageId,
+    id: attachmentId,
+  });
+
+  const base64Data = res.data.data;
+  if (!base64Data) return "Error: Could not retrieve attachment data.";
+
+  const buffer = Buffer.from(base64Data, "base64url");
+
+  if (buffer.length > MAX_ATTACHMENT_BYTES) {
+    return `Attachment "${filename}" is too large (${Math.round(buffer.length / 1024 / 1024)} MB). Max supported size is 10 MB.`;
+  }
+
+  // PDF
+  if (ext === ".pdf") {
+    try {
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+      try {
+        const result = await parser.getText();
+        const text = result.text.trim();
+        if (!text) return `PDF "${filename}" contains no extractable text (may be scanned/image-based).`;
+        if (text.length > MAX_TEXT_CHARS) {
+          return `Content of "${filename}" (truncated to ${MAX_TEXT_CHARS} chars):\n\n${text.slice(0, MAX_TEXT_CHARS)}\n\n[... truncated, full document is ${text.length} chars]`;
+        }
+        return `Content of "${filename}":\n\n${text}`;
+      } finally {
+        await parser.destroy();
+      }
+    } catch (err) {
+      return `Error reading PDF "${filename}": ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
+  // Text files
+  if (TEXT_EXTENSIONS.has(ext)) {
+    const text = buffer.toString("utf-8");
+    if (text.length > MAX_TEXT_CHARS) {
+      return `Content of "${filename}" (truncated to ${MAX_TEXT_CHARS} chars):\n\n${text.slice(0, MAX_TEXT_CHARS)}\n\n[... truncated, full file is ${text.length} chars]`;
+    }
+    return `Content of "${filename}":\n\n${text}`;
+  }
+
+  return `Cannot read "${filename}" (${ext || "unknown"} format). Supported formats: text files (${[...TEXT_EXTENSIONS].join(", ")}) and PDFs.`;
+}
+
 async function handleCheckRecipient(
   input: Record<string, unknown>,
   ctx: UserContext
@@ -469,6 +607,7 @@ export const gmailHandlers = new Map<string, ToolHandler>([
   ["gmail_read", handleGmailRead],
   ["gmail_send", handleGmailSend],
   ["gmail_forward", handleGmailForward],
+  ["gmail_get_attachment", handleGetAttachment],
   ["gmail_check_recipient", handleCheckRecipient],
   ["gmail_approve_recipient", handleApproveRecipient],
 ]);

@@ -15,7 +15,8 @@
     "dotenv": "^16.4.0",
     "googleapis": "^171.4.0",
     "node-telegram-bot-api": "^0.66.0",
-    "open": "^11.0.0"
+    "open": "^11.0.0",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

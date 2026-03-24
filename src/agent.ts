@@ -63,6 +63,7 @@ Here is what you can do:
 - Read full email threads
 - Draft and send new emails
 - Forward existing emails with attachments preserved
+- Read email attachments (text files and PDFs)
 
 **Calendar**
 - Search events by date range or text
