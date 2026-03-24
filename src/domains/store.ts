@@ -47,6 +47,7 @@ export interface ScheduleEntry {
   cron: string;
   prompt: string;
   timezone?: string;
+  once?: boolean;
 }
 
 export interface UserStore {

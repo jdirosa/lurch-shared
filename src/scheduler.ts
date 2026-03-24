@@ -16,12 +16,14 @@ export interface Schedule {
   cron: string;
   prompt: string;
   timezone?: string;
+  once?: boolean;
 }
 
 // Active cron tasks keyed by `${chatId}:${scheduleId}`
 const activeTasks = new Map<string, ScheduledTask>();
 
 let botInstance: TelegramBot;
+let onRemoveCallback: ((chatId: number, scheduleId: string) => void) | undefined;
 
 function taskKey(chatId: number, scheduleId: string): string {
   return `${chatId}:${scheduleId}`;
@@ -45,6 +47,12 @@ function registerJob(chatId: number, schedule: Schedule): void {
       await botInstance.sendMessage(chatId, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
     } catch (err) {
       console.error(`[scheduler] error for "${schedule.label}" chat ${chatId}:`, err);
+    }
+
+    if (schedule.once) {
+      console.log(`[scheduler] one-time schedule "${schedule.label}" fired, removing`);
+      unregisterJob(chatId, schedule.id);
+      onRemoveCallback?.(chatId, schedule.id);
     }
   }, {
     timezone: schedule.timezone || "America/Toronto",
@@ -80,8 +88,12 @@ function loadSchedulesFromStore(): Array<{ chatId: number; schedules: Schedule[]
   }
 }
 
-export function initScheduler(bot: TelegramBot): void {
+export function initScheduler(
+  bot: TelegramBot,
+  onRemove?: (chatId: number, scheduleId: string) => void,
+): void {
   botInstance = bot;
+  onRemoveCallback = onRemove;
 
   // Re-register all persisted schedules
   const allSchedules = loadSchedulesFromStore();

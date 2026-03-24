@@ -4,6 +4,7 @@ import { runAgent, clearHistory } from "./agent.js";
 import { resolveContext } from "./users.js";
 import { markdownToTelegramHtml } from "./format.js";
 import { initScheduler } from "./scheduler.js";
+import { loadUserStore, saveUserStore } from "./domains/store.js";
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -74,5 +75,11 @@ bot.on("message", async (msg) => {
   }
 });
 
-initScheduler(bot);
+initScheduler(bot, (chatId, scheduleId) => {
+  const ctx = resolveContext(chatId, chatId);
+  if (!ctx) return;
+  const store = loadUserStore(ctx);
+  store.schedules = store.schedules.filter((s) => s.id !== scheduleId);
+  saveUserStore(ctx, store);
+});
 log("Lurch is running.");

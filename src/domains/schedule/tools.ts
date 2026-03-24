@@ -9,7 +9,7 @@ export const scheduleTools: Anthropic.Tool[] = [
     name: "schedule_set",
     description:
       "Create or update a scheduled notification. Lurch will run the given prompt on the cron schedule and send the result to the user. " +
-      "Use this for daily briefings, reminders, periodic check-ins, etc. " +
+      "Use this for daily briefings, reminders, periodic check-ins, etc. Set once=true for one-time reminders. " +
       "The prompt should be a natural language instruction for what Lurch should do when the schedule fires — " +
       'e.g., "Give me a morning briefing: check my calendar for today, any important unread emails, and upcoming trip countdowns." ' +
       "If a schedule with the same id already exists, it will be replaced. " +
@@ -41,6 +41,11 @@ export const scheduleTools: Anthropic.Tool[] = [
           type: "string",
           description:
             "IANA timezone (default: America/Toronto). Examples: America/New_York, Europe/London, Asia/Tokyo",
+        },
+        once: {
+          type: "boolean",
+          description:
+            "If true, this schedule fires once and is automatically deleted. Use for one-time reminders.",
         },
       },
       required: ["id", "label", "cron", "prompt"],
@@ -79,8 +84,9 @@ async function handleScheduleSet(
   const cronExpr = String(input.cron);
   const prompt = String(input.prompt);
   const timezone = input.timezone ? String(input.timezone) : undefined;
+  const once = input.once === true;
 
-  const schedule = { id, label, cron: cronExpr, prompt, timezone };
+  const schedule = { id, label, cron: cronExpr, prompt, timezone, once: once || undefined };
 
   // Register the cron job (validates the expression)
   const result = addSchedule(ctx.chatId, schedule);
