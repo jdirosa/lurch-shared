@@ -1,11 +1,10 @@
 import cron, { type ScheduledTask } from "node-cron";
 import type TelegramBot from "node-telegram-bot-api";
-import { resolveContext } from "./users.js";
-import { runAgent } from "./agent.js";
 import { markdownToTelegramHtml } from "./format.js";
 import { readFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { log } from "./log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STORE_PATH = join(__dirname, "..", "lists.json");
@@ -36,21 +35,29 @@ function registerJob(chatId: number, schedule: Schedule): void {
   activeTasks.get(key)?.stop();
 
   const task = cron.schedule(schedule.cron, async () => {
-    console.log(`[scheduler] firing "${schedule.label}" for chat ${chatId}`);
+    log(`[scheduler] firing "${schedule.label}" for chat ${chatId}`);
     try {
-      const ctx = resolveContext(chatId, chatId);
-      if (!ctx) {
-        console.log(`[scheduler] no context for chat ${chatId}, skipping`);
-        return;
+      if (schedule.once) {
+        // One-time reminders: send the prompt directly as a message
+        await botInstance.sendMessage(chatId, markdownToTelegramHtml(schedule.prompt), { parse_mode: "HTML" });
+      } else {
+        // Recurring schedules: run through the agent (e.g. daily briefings that query APIs)
+        const { resolveContext } = await import("./users.js");
+        const { runAgent } = await import("./agent.js");
+        const ctx = resolveContext(chatId, chatId);
+        if (!ctx) {
+          log(`[scheduler] no context for chat ${chatId}, skipping`);
+          return;
+        }
+        const reply = await runAgent(schedule.prompt, ctx);
+        await botInstance.sendMessage(chatId, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
       }
-      const reply = await runAgent(schedule.prompt, ctx);
-      await botInstance.sendMessage(chatId, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
     } catch (err) {
-      console.error(`[scheduler] error for "${schedule.label}" chat ${chatId}:`, err);
+      log(`[scheduler] error for "${schedule.label}" chat ${chatId}: ${err}`);
     }
 
     if (schedule.once) {
-      console.log(`[scheduler] one-time schedule "${schedule.label}" fired, removing`);
+      log(`[scheduler] one-time schedule "${schedule.label}" fired, removing`);
       unregisterJob(chatId, schedule.id);
       onRemoveCallback?.(chatId, schedule.id);
     }
@@ -59,7 +66,7 @@ function registerJob(chatId: number, schedule: Schedule): void {
   });
 
   activeTasks.set(key, task);
-  console.log(`[scheduler] registered "${schedule.label}" (${schedule.cron}) for chat ${chatId}`);
+  log(`[scheduler] registered "${schedule.label}" (${schedule.cron}) for chat ${chatId}`);
 }
 
 function unregisterJob(chatId: number, scheduleId: string): void {
@@ -104,11 +111,11 @@ export function initScheduler(
         registerJob(chatId, schedule);
         count++;
       } else {
-        console.log(`[scheduler] invalid cron "${schedule.cron}" for "${schedule.label}", skipping`);
+        log(`[scheduler] invalid cron "${schedule.cron}" for "${schedule.label}", skipping`);
       }
     }
   }
-  console.log(`[scheduler] initialized — ${count} job(s) restored`);
+  log(`[scheduler] initialized — ${count} job(s) restored`);
 }
 
 export function addSchedule(chatId: number, schedule: Schedule): string {

@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "fs";
+import { log } from "./log.js";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -69,7 +70,7 @@ const registry = loadRegistry();
 
 // Log loaded chats at startup
 for (const [id, entry] of Object.entries(registry.chats)) {
-  console.log(`[config] chat ${id} → ${entry.name} (${entry.google_account || "no email"})`);
+  log(`[config] chat ${id} → ${entry.name} (${entry.google_account || "no email"})`);
 }
 
 // --- Token lookup and update ---

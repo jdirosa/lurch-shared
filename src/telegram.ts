@@ -6,9 +6,7 @@ import { markdownToTelegramHtml } from "./format.js";
 import { initScheduler } from "./scheduler.js";
 import { loadUserStore, saveUserStore } from "./domains/store.js";
 
-function log(msg: string) {
-  console.log(`[${new Date().toISOString()}] ${msg}`);
-}
+import { log } from "./log.js";
 
 const bot = new TelegramBot(config.telegramBotToken, {
   polling: {
