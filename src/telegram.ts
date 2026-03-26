@@ -19,6 +19,10 @@ const botMention = `@${config.telegramBotUsername}`;
 let botId: number | undefined;
 bot.getMe().then((me) => { botId = me.id; });
 
+bot.on("polling_error", (err) => {
+  log(`[polling_error] ${err.message}`);
+});
+
 bot.on("message", async (msg) => {
   if (!msg.text || !msg.from) return;
   if (msg.message_id === 0) {
@@ -65,7 +69,7 @@ bot.on("message", async (msg) => {
   try {
     const reply = await runAgent(text, ctx);
     clearInterval(typingInterval);
-    await bot.sendMessage(msg.chat.id, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
+    await bot.sendMessage(msg.chat.id, markdownToTelegramHtml(reply || "I'm not sure what to say. Try again?"), { parse_mode: "HTML" });
   } catch (err) {
     clearInterval(typingInterval);
     log(`[error] Agent error: ${err}`);

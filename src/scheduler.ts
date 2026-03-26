@@ -50,7 +50,12 @@ function registerJob(chatId: number, schedule: Schedule): void {
           return;
         }
         const reply = await runAgent(schedule.prompt, ctx);
-        await botInstance.sendMessage(chatId, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
+        if (!reply || reply === "(no response)") {
+          log(`[scheduler] agent returned empty for "${schedule.label}", sending prompt directly`);
+          await botInstance.sendMessage(chatId, markdownToTelegramHtml(schedule.prompt), { parse_mode: "HTML" });
+        } else {
+          await botInstance.sendMessage(chatId, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
+        }
       }
     } catch (err) {
       log(`[scheduler] error for "${schedule.label}" chat ${chatId}: ${err}`);

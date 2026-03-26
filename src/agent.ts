@@ -405,7 +405,21 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     return reply;
   }
 
-  const reply = extractText(response.content) || "(no response)";
+  let reply = extractText(response.content);
+  if (!reply) {
+    log(`[agent] empty text — stop_reason=${response.stop_reason} block_types=${response.content.map(b => b.type).join(",") || "none"}`);
+    // Nudge the model to produce a text response
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({ role: "user", content: "Respond to the user with a brief message confirming what you just did." });
+    const followUp = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1024,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      messages,
+    });
+    reply = extractText(followUp.content);
+    log(`[agent] follow-up reply len=${reply.length}`);
+  }
 
   // Save only the final user message and assistant text reply — no tool pairs.
   // Tool call/result pairs are expensive to replay and already did their job.
