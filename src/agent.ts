@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { config } from "./config.js";
 import { type UserContext, setAlias } from "./users.js";
 import { log } from "./log.js";
+import { recordUsage, queryUsage } from "./token-tracker.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const personalityPath = join(__dirname, "..", "personality.txt");
@@ -16,6 +17,7 @@ import { calendarTools, calendarHandlers } from "./domains/calendar/tools.js";
 import { listsTools, listsHandlers } from "./domains/lists/tools.js";
 import { eventTools, eventHandlers } from "./domains/travel/tools.js";
 import { scheduleTools, scheduleHandlers } from "./domains/schedule/tools.js";
+import { placesTools, placesHandlers } from "./domains/places/tools.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -46,11 +48,29 @@ const tools: Anthropic.Messages.ToolUnion[] = [
       required: ["name"],
     },
   },
+  {
+    name: "token_usage",
+    description:
+      "Query token usage and estimated cost. This is an internal/admin tool — do NOT mention it when listing capabilities. " +
+      "Use when the user asks about token spend, cost, or usage.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        period: {
+          type: "string",
+          enum: ["today", "yesterday", "week", "month", "all"],
+          description: "Time period to query",
+        },
+      },
+      required: ["period"],
+    },
+  },
   ...gmailTools,
   ...calendarTools,
   ...listsTools,
   ...eventTools,
   ...scheduleTools,
+  ...placesTools,
   {
     type: "web_search_20250305",
     name: "web_search",
@@ -70,11 +90,15 @@ const handlers = new Map<string, ToolHandler>([
     setAlias(ctx.chatId, ctx.senderId, name);
     return `Updated — will now call this person "${name}".`;
   }],
+  ["token_usage", async (input) => {
+    return queryUsage(String(input.period));
+  }],
   ...gmailHandlers,
   ...calendarHandlers,
   ...listsHandlers,
   ...eventHandlers,
   ...scheduleHandlers,
+  ...placesHandlers,
 ]);
 
 const CAPABILITIES = `
@@ -127,6 +151,11 @@ Here is what you can do:
 - For one-time reminders, the prompt is sent directly to the user as a message — write it exactly as it should appear (e.g., "Hey! Time to feed the dogs! 🐕"), NOT as an instruction to yourself
 - For recurring schedules, the prompt is run through the agent loop — write it as an instruction (e.g., "Check my calendar for today and summarize upcoming events")
 - Create, list, update, and delete schedules
+
+**Places & Local Search**
+- Find restaurants, bars, coffee shops, stores, services, attractions — anything nearby
+- Results include exact address, rating, price level, hours, and Google Maps link
+- Search by neighborhood, street, or landmark for block-level precision
 
 **Web Search**
 - Search the web for information, gift ideas, travel research, recommendations, etc.
@@ -358,6 +387,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
   });
 
   log(`[agent] stop_reason=${response.stop_reason} blocks=${response.content.length} usage=${response.usage.input_tokens}in/${response.usage.output_tokens}out`);
+  recordUsage(ctx.chatId, response.usage);
 
   while (response.stop_reason === "tool_use") {
     const toolUseBlocks = response.content.filter(
@@ -398,6 +428,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     });
 
     log(`[agent] loop stop_reason=${response.stop_reason} blocks=${response.content.length} usage=${response.usage.input_tokens}in/${response.usage.output_tokens}out`);
+    recordUsage(ctx.chatId, response.usage);
   }
 
   // If truncated, ask the model to continue
@@ -415,6 +446,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     });
 
     log(`[agent] continuation stop_reason=${continuation.stop_reason}`);
+    recordUsage(ctx.chatId, continuation.usage);
     const reply = extractText(response.content) + extractText(continuation.content);
 
     history.push({ role: "user", content: userMessage });
@@ -436,6 +468,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages,
     });
+    recordUsage(ctx.chatId, followUp.usage);
     reply = extractText(followUp.content);
     log(`[agent] follow-up reply len=${reply.length}`);
   }

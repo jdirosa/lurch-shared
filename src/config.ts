@@ -16,4 +16,5 @@ export const config = {
   googleClientId: optionalEnv("GOOGLE_CLIENT_ID"),
   googleClientSecret: optionalEnv("GOOGLE_CLIENT_SECRET"),
   telegramBotUsername: requireEnv("TELEGRAM_BOT_USERNAME"),
+  googlePlacesApiKey: optionalEnv("GOOGLE_PLACES_API_KEY"),
 };
