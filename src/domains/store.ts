@@ -14,24 +14,25 @@ export interface GiftEntry {
   ideas: string[];
 }
 
-export interface TripBooking {
+export interface EventBooking {
   category: string;
   details: string;
 }
 
-export interface TripDay {
+export interface EventDay {
   day: string;
   items: string[];
 }
 
-export interface TripEntry {
+export interface EventEntry {
   destination: string;
   start_date?: string;
   end_date?: string;
   notes?: string;
   ideas: string[];
-  itinerary: TripDay[];
-  bookings: TripBooking[];
+  guests?: string[];
+  itinerary: EventDay[];
+  bookings: EventBooking[];
 }
 
 export interface Recipe {
@@ -54,7 +55,7 @@ export interface UserStore {
   dietary?: string;
   lists: Record<string, string[]>;
   gifts: Record<string, GiftEntry>;
-  trips: Record<string, TripEntry>;
+  events: Record<string, EventEntry>;
   recipes: Record<string, Recipe>;
   approved_emails: string[];
   schedules: ScheduleEntry[];
@@ -81,8 +82,16 @@ export function loadUserStore(ctx: UserContext): UserStore {
   const all = loadAll();
   const store = all[chatKey(ctx)];
   if (store) {
+    // TODO: remove after 2026-04-09 — temp migration from trips → events
+    if ((store as any).trips && !store.events) {
+      store.events = (store as any).trips;
+      delete (store as any).trips;
+      all[chatKey(ctx)] = store;
+      saveAll(all);
+    }
+
     // Ensure keys exist for stores created before newer features
-    if (!store.trips) store.trips = {};
+    if (!store.events) store.events = {};
     if (!store.recipes) store.recipes = {};
     if (!store.approved_emails) store.approved_emails = [];
     if (!store.schedules) store.schedules = [];
@@ -91,7 +100,7 @@ export function loadUserStore(ctx: UserContext): UserStore {
   return {
     lists: Object.fromEntries(DEFAULT_LISTS.map((n) => [n, []])),
     gifts: {},
-    trips: {},
+    events: {},
     recipes: {},
     approved_emails: [],
     schedules: [],

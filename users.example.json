@@ -10,7 +10,8 @@
       },
       "calendar_id": "",
       "dropbox_root": "",
-      "timezone": "America/Toronto"
+      "timezone": "America/Toronto",
+      "aliases": {}
     },
     "-100987654": {
       "name": "Family Group",
@@ -22,7 +23,8 @@
       },
       "calendar_id": "",
       "dropbox_root": "",
-      "timezone": "America/Toronto"
+      "timezone": "America/Toronto",
+      "aliases": {}
     }
   }
 }

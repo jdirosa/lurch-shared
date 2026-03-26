@@ -21,6 +21,7 @@ interface ChatEntry {
   calendar_id: string;
   dropbox_root: string;
   timezone: string;
+  aliases?: Record<string, string>; // telegram user ID → preferred name
 }
 
 interface ChatRegistry {
@@ -120,6 +121,16 @@ export function updateTokensByChatId(chatId: string, tokens: GoogleTokens): void
   writeRegistry();
 }
 
+// --- Aliases ---
+
+export function setAlias(chatId: number, userId: number, alias: string): void {
+  const chat = registry.chats[String(chatId)];
+  if (!chat) throw new Error(`No chat found with ID ${chatId}`);
+  if (!chat.aliases) chat.aliases = {};
+  chat.aliases[String(userId)] = alias;
+  writeRegistry();
+}
+
 // --- Context resolution ---
 
 export function resolveContext(
@@ -131,11 +142,12 @@ export function resolveContext(
   if (!chat) return null;
 
   const account = chat.google_account;
+  const alias = chat.aliases?.[String(fromId)];
   return {
     chatName: chat.name,
     chatId,
     senderId: fromId,
-    senderName: fromName ?? "Unknown",
+    senderName: alias ?? fromName ?? "Unknown",
     timezone: chat.timezone || "America/Toronto",
     resources: {
       google_accounts: [account].filter(Boolean),

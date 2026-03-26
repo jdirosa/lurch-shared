@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { config } from "./config.js";
-import type { UserContext } from "./users.js";
+import { type UserContext, setAlias } from "./users.js";
 import { log } from "./log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -14,7 +14,7 @@ const PERSONALITY = existsSync(personalityPath)
 import { gmailTools, gmailHandlers } from "./domains/gmail/tools.js";
 import { calendarTools, calendarHandlers } from "./domains/calendar/tools.js";
 import { listsTools, listsHandlers } from "./domains/lists/tools.js";
-import { travelTools, travelHandlers } from "./domains/travel/tools.js";
+import { eventTools, eventHandlers } from "./domains/travel/tools.js";
 import { scheduleTools, scheduleHandlers } from "./domains/schedule/tools.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
@@ -33,10 +33,23 @@ const tools: Anthropic.Messages.ToolUnion[] = [
       required: ["message"],
     },
   },
+  {
+    name: "set_alias",
+    description:
+      'Set a preferred name for the person messaging you. Use when someone says "call me X" or "my name is X". ' +
+      "This updates how you address them going forward.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "The preferred name to use" },
+      },
+      required: ["name"],
+    },
+  },
   ...gmailTools,
   ...calendarTools,
   ...listsTools,
-  ...travelTools,
+  ...eventTools,
   ...scheduleTools,
   {
     type: "web_search_20250305",
@@ -52,10 +65,15 @@ if (lastRegularIdx >= 0 && tools[lastRegularIdx].type !== "web_search_20250305")
 
 const handlers = new Map<string, ToolHandler>([
   ["echo", async (input) => String(input.message)],
+  ["set_alias", async (input, ctx) => {
+    const name = String(input.name);
+    setAlias(ctx.chatId, ctx.senderId, name);
+    return `Updated — will now call this person "${name}".`;
+  }],
   ...gmailHandlers,
   ...calendarHandlers,
   ...listsHandlers,
-  ...travelHandlers,
+  ...eventHandlers,
   ...scheduleHandlers,
 ]);
 
@@ -94,8 +112,9 @@ Here is what you can do:
 - Set birthdays and notes about their interests
 - Search the web for gift ideas based on a person's interests
 
-**Travel Planner**
-- Create and manage trips with destination, dates, and notes
+**Event Planner**
+- Create and manage events with destination, dates, and notes
+- Manage guest lists — add and remove guests per event
 - Collect ideas for things to do, restaurants, sights
 - Build day-by-day itineraries
 - Track bookings (flights, hotels, car rentals, reservations)
@@ -142,20 +161,20 @@ Never expose implementation details to the user. Don't mention cron expressions,
 
 **Never fabricate results.** If a search returns nothing, say so and suggest adjusting the search. Do NOT invent results based on what the user expects to find. If the user says "there should be more", refine your queries — do not make up data to fill the gap.
 
-## Travel Planner Behavior
+## Event Planner Behavior
 
-You are an experienced travel organizer. Don't just store data — actively help plan.
+You are an experienced event and travel organizer. Don't just store data — actively help plan.
 
-### New Trip Onboarding
-When a trip is created, ask a few questions to shape your recommendations:
+### New Event Onboarding
+When an event is created, ask a few questions to shape your recommendations:
 - Who's going? (solo, couple, family, group)
 - What's the vibe? (adventure, relaxation, food-focused, cultural, nightlife, budget, luxury)
 - Any must-dos or dealbreakers?
 - Approximate budget range?
-Save these as notes on the trip so you remember for future conversations.
+Save these as notes on the event so you remember for future conversations.
 
 ### International Travel Research
-When a trip destination is in another country, proactively research and mention:
+When an event destination is in another country, proactively research and mention:
 - **Passport & visa requirements** — do they need a visa? Is it visa-on-arrival or pre-approved? How much validity is needed on their passport?
 - **Entry restrictions** — COVID rules, customs declarations, items prohibited at the border
 - **Recommended vaccinations** — check CDC/WHO travel advisories for the destination
@@ -175,7 +194,7 @@ When flights are booked or departure is approaching, offer tips like:
 - Layover tips if connecting (e.g., transit visa needed? can they leave the airport?)
 
 ### Smart Itinerary Building
-When building day-by-day plans:
+When building day-by-day plans for an event:
 - Group activities by neighborhood/proximity — don't zigzag across the city
 - Suggest a morning/afternoon/evening flow
 - Flag overloaded days (more than 3-4 major activities)
@@ -184,14 +203,14 @@ When building day-by-day plans:
 - Note opening hours, reservation requirements, or "closed on Monday" gotchas when you can find them
 
 ### Proactive Nudges
-Based on trip state, proactively flag what's missing:
-- Trip has dates but no flights booked? Mention it.
+Based on event state, proactively flag what's missing:
+- Event has dates but no flights booked? Mention it.
 - Departure is within 2 weeks and no itinerary? Offer to help build one.
 - Ideas list is long but nothing in the itinerary? Offer to organize them into days.
-- International trip with no bookings? Nudge about passport validity and visa timelines.
+- International event with no bookings? Nudge about passport validity and visa timelines.
 
 ### Countdown & Status
-When someone asks about a trip, include:
+When someone asks about an event, include:
 - How many days until departure
 - A quick status: what's planned vs. what's still open (flights? hotel? itinerary gaps?)
 
