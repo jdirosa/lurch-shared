@@ -2,7 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 import { config } from "./config.js";
 import { runAgent, clearHistory } from "./agent.js";
 import { resolveContext } from "./users.js";
-import { markdownToTelegramHtml } from "./format.js";
+import { markdownToTelegramHtml, splitMessage } from "./format.js";
 import { initScheduler } from "./scheduler.js";
 import { loadUserStore, saveUserStore } from "./domains/store.js";
 
@@ -69,7 +69,10 @@ bot.on("message", async (msg) => {
   try {
     const reply = await runAgent(text, ctx);
     clearInterval(typingInterval);
-    await bot.sendMessage(msg.chat.id, markdownToTelegramHtml(reply || "I'm not sure what to say. Try again?"), { parse_mode: "HTML" });
+    const html = markdownToTelegramHtml(reply || "I'm not sure what to say. Try again?");
+    for (const chunk of splitMessage(html)) {
+      await bot.sendMessage(msg.chat.id, chunk, { parse_mode: "HTML" });
+    }
   } catch (err) {
     clearInterval(typingInterval);
     log(`[error] Agent error: ${err}`);

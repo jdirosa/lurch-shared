@@ -1,6 +1,6 @@
 import cron, { type ScheduledTask } from "node-cron";
 import type TelegramBot from "node-telegram-bot-api";
-import { markdownToTelegramHtml } from "./format.js";
+import { markdownToTelegramHtml, splitMessage } from "./format.js";
 import { readFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -37,9 +37,10 @@ function registerJob(chatId: number, schedule: Schedule): void {
   const task = cron.schedule(schedule.cron, async () => {
     log(`[scheduler] firing "${schedule.label}" for chat ${chatId}`);
     try {
+      let html: string;
       if (schedule.once) {
         // One-time reminders: send the prompt directly as a message
-        await botInstance.sendMessage(chatId, markdownToTelegramHtml(schedule.prompt), { parse_mode: "HTML" });
+        html = markdownToTelegramHtml(schedule.prompt);
       } else {
         // Recurring schedules: run through the agent (e.g. daily briefings that query APIs)
         const { resolveContext } = await import("./users.js");
@@ -52,10 +53,13 @@ function registerJob(chatId: number, schedule: Schedule): void {
         const reply = await runAgent(schedule.prompt, ctx);
         if (!reply || reply === "(no response)") {
           log(`[scheduler] agent returned empty for "${schedule.label}", sending prompt directly`);
-          await botInstance.sendMessage(chatId, markdownToTelegramHtml(schedule.prompt), { parse_mode: "HTML" });
+          html = markdownToTelegramHtml(schedule.prompt);
         } else {
-          await botInstance.sendMessage(chatId, markdownToTelegramHtml(reply), { parse_mode: "HTML" });
+          html = markdownToTelegramHtml(reply);
         }
+      }
+      for (const chunk of splitMessage(html)) {
+        await botInstance.sendMessage(chatId, chunk, { parse_mode: "HTML" });
       }
     } catch (err) {
       log(`[scheduler] error for "${schedule.label}" chat ${chatId}: ${err}`);

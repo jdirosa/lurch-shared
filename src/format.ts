@@ -13,6 +13,47 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+const TELEGRAM_MAX_LENGTH = 4096;
+
+/**
+ * Split a message into chunks that fit within Telegram's 4096-char limit.
+ * Splits at paragraph breaks (\n\n), then line breaks (\n), then hard-cuts.
+ */
+export function splitMessage(text: string): string[] {
+  if (text.length <= TELEGRAM_MAX_LENGTH) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > TELEGRAM_MAX_LENGTH) {
+    let splitAt = -1;
+
+    // Try splitting at a paragraph break
+    const paraIdx = remaining.lastIndexOf("\n\n", TELEGRAM_MAX_LENGTH);
+    if (paraIdx > 0) {
+      splitAt = paraIdx;
+    } else {
+      // Try splitting at a line break
+      const lineIdx = remaining.lastIndexOf("\n", TELEGRAM_MAX_LENGTH);
+      if (lineIdx > 0) {
+        splitAt = lineIdx;
+      } else {
+        // Hard cut
+        splitAt = TELEGRAM_MAX_LENGTH;
+      }
+    }
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).replace(/^\n+/, "");
+  }
+
+  if (remaining.length > 0) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
 export function markdownToTelegramHtml(md: string): string {
   // Split out code blocks first so we don't mangle their contents
   const parts: string[] = [];
