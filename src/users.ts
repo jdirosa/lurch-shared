@@ -106,6 +106,14 @@ function writeRegistry(): void {
   writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
 }
 
+export function getChatIdForAccount(email: string): number | null {
+  if (!email) return null;
+  for (const [chatId, entry] of Object.entries(registry.chats)) {
+    if (entry.google_account === email) return Number(chatId);
+  }
+  return null;
+}
+
 export function getRegistryChats(): Array<{ chatId: string; name: string; email: string }> {
   return Object.entries(registry.chats).map(([id, entry]) => ({
     chatId: id,

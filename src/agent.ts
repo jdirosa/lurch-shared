@@ -110,6 +110,7 @@ Here is what you can do:
 - Draft and send new emails
 - Forward existing emails with attachments preserved
 - Read email attachments (text files and PDFs)
+- Start or stop an automatic inbox watcher that checks every 10 minutes and pings the user about reservations, bookings, confirmations, and other actionable mail (opt-in)
 
 **Calendar**
 - Search events by date range or text
@@ -361,6 +362,13 @@ function persistHistory(chatId: number, history: Anthropic.MessageParam[]): void
   const all = loadAllHistory();
   all[String(chatId)] = history;
   saveAllHistory(all);
+}
+
+export function appendAssistantMessage(chatId: number, text: string): void {
+  const history = getHistory(chatId);
+  history.push({ role: "assistant", content: text });
+  while (history.length > MAX_HISTORY) history.shift();
+  persistHistory(chatId, history);
 }
 
 export function clearHistory(chatId: number): void {

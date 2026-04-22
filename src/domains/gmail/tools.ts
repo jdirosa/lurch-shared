@@ -131,6 +131,38 @@ export const gmailTools: Anthropic.Tool[] = [
     },
   },
   {
+    name: "email_watch_enable",
+    description:
+      "Start the inbox watcher. Every 10 minutes, Lurch will scan the user's inbox for new emails and ping them about reservations, bookings, confirmations, travel updates, and other actionable items. Routine mail (newsletters, receipts, notifications) is silently archived from the scan. " +
+      "Only call this tool when the user explicitly asks Lurch to start watching their email. " +
+      "Confirm to the user afterwards with a short sentence.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "email_watch_disable",
+    description:
+      "Stop the inbox watcher. Only call when the user explicitly asks to stop watching their email.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "email_watch_status",
+    description:
+      "Report whether the inbox watcher is currently enabled, and since when.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "gmail_check_recipient",
     description:
       "Check if an email address is on the user's approved recipients list. " +
@@ -312,7 +344,7 @@ function extractAttachments(payload: any, messageId: string): AttachmentInfo[] {
   return attachments;
 }
 
-function extractBody(payload: any): string {
+export function extractBody(payload: any): string {
   if (!payload) return "(no body)";
 
   // Check for text/plain first
@@ -577,6 +609,52 @@ async function handleGetAttachment(
   return `Cannot read "${filename}" (${ext || "unknown"} format). Supported formats: text files (${[...TEXT_EXTENSIONS].join(", ")}) and PDFs.`;
 }
 
+const DEFAULT_WATCH_LABEL = "lurch/ingested";
+
+async function handleEmailWatchEnable(
+  _input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const account = ctx.resources.google_accounts[0];
+  if (!account) return "No Google account configured for this chat — can't start the watcher.";
+
+  const store = loadUserStore(ctx);
+  if (store.email_watch?.enabled) {
+    return `Inbox watcher is already running (since ${store.email_watch.since}).`;
+  }
+
+  store.email_watch = {
+    enabled: true,
+    since: new Date().toISOString(),
+    label: store.email_watch?.label ?? DEFAULT_WATCH_LABEL,
+  };
+  saveUserStore(ctx, store);
+  return `Inbox watcher enabled. I'll check every 10 minutes and ping you about reservations, bookings, confirmations, and other actionable emails.`;
+}
+
+async function handleEmailWatchDisable(
+  _input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  if (!store.email_watch?.enabled) {
+    return "Inbox watcher is already off.";
+  }
+  store.email_watch.enabled = false;
+  saveUserStore(ctx, store);
+  return "Inbox watcher disabled.";
+}
+
+async function handleEmailWatchStatus(
+  _input: Record<string, unknown>,
+  ctx: UserContext
+): Promise<string> {
+  const store = loadUserStore(ctx);
+  const w = store.email_watch;
+  if (!w?.enabled) return "Inbox watcher: OFF.";
+  return `Inbox watcher: ON (watching since ${w.since}, label "${w.label}").`;
+}
+
 async function handleCheckRecipient(
   input: Record<string, unknown>,
   ctx: UserContext
@@ -610,4 +688,7 @@ export const gmailHandlers = new Map<string, ToolHandler>([
   ["gmail_get_attachment", handleGetAttachment],
   ["gmail_check_recipient", handleCheckRecipient],
   ["gmail_approve_recipient", handleApproveRecipient],
+  ["email_watch_enable", handleEmailWatchEnable],
+  ["email_watch_disable", handleEmailWatchDisable],
+  ["email_watch_status", handleEmailWatchStatus],
 ]);

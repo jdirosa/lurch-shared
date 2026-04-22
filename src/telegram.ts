@@ -4,6 +4,7 @@ import { runAgent, clearHistory } from "./agent.js";
 import { resolveContext } from "./users.js";
 import { markdownToTelegramHtml, splitMessage } from "./format.js";
 import { initScheduler } from "./scheduler.js";
+import { initEmailWatcher } from "./domains/gmail/watcher.js";
 import { loadUserStore, saveUserStore } from "./domains/store.js";
 
 import { log } from "./log.js";
@@ -87,4 +88,5 @@ initScheduler(bot, (chatId, scheduleId) => {
   store.schedules = store.schedules.filter((s) => s.id !== scheduleId);
   saveUserStore(ctx, store);
 });
+initEmailWatcher(bot);
 log("Lurch is running.");

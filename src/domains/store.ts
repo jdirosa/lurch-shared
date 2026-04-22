@@ -51,6 +51,12 @@ export interface ScheduleEntry {
   once?: boolean;
 }
 
+export interface EmailWatch {
+  enabled: boolean;
+  since: string; // ISO timestamp — only classify emails received after this
+  label: string; // Gmail label applied after ingestion (default "lurch/ingested")
+}
+
 export interface UserStore {
   dietary?: string;
   lists: Record<string, string[]>;
@@ -59,6 +65,7 @@ export interface UserStore {
   recipes: Record<string, Recipe>;
   approved_emails: string[];
   schedules: ScheduleEntry[];
+  email_watch?: EmailWatch;
 }
 
 type AllStores = Record<string, UserStore>;
@@ -111,4 +118,8 @@ export function saveUserStore(ctx: UserContext, store: UserStore): void {
   const all = loadAll();
   all[chatKey(ctx)] = store;
   saveAll(all);
+}
+
+export function loadAllStores(): Record<string, UserStore> {
+  return loadAll();
 }
