@@ -179,6 +179,22 @@ async function runOne(
     }
 
     const gmail = getGmailClient(account);
+
+    // Diagnostic: verify we're actually authenticated as the expected account.
+    // If expected != actual, that's the source of any inbox-crossing bugs.
+    try {
+      const profile = await gmail.users.getProfile({ userId: "me" });
+      const actual = profile.data.emailAddress;
+      if (actual && actual.toLowerCase() !== account.toLowerCase()) {
+        log(`[watcher] MISMATCH chat ${chatId}: expected=${account} actual=${actual} — skipping tick`);
+        return;
+      }
+      log(`[watcher] chat ${chatId}: authed as ${actual}`);
+    } catch (err) {
+      log(`[watcher] chat ${chatId}: getProfile failed: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+
     const candidates = await fetchCandidates(gmail, watch);
     if (candidates.length === 0) return;
 
