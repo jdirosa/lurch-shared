@@ -396,7 +396,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
   log(`[agent] sending history=${history.length} messages=${messages.length}`);
 
   let response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 8192,
     system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     tools,
@@ -437,7 +437,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     log(`[agent] messages array roles: ${messages.map(m => m.role).join(", ")}`);
 
     response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 8192,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       tools,
@@ -455,7 +455,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     messages.push({ role: "user", content: "Continue from where you left off." });
 
     const continuation = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 8192,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       tools,
@@ -480,7 +480,7 @@ export async function runAgent(userMessage: string, ctx: UserContext): Promise<s
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: "Respond to the user with a brief message confirming what you just did." });
     const followUp = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages,
